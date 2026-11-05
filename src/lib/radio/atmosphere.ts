@@ -52,18 +52,29 @@ function rainAlphaFit(fMhz: number, pol: 'vertical' | 'horizontal' | 'circular')
 }
 
 /**
- * Эффективная длина трассы в дожде (P.530/P.838): deff = d / (1 + d/d0), d0 = 35 км
- * (обобщённый подход P.1815/P.838 для наклонных трасс упрощён до горизонтального).
+ * Эффективная длина трассы в дожде.
+ *  • terrestrial (по умолчанию): P.530/P.838, deff = d / (1 + d/d0), d0 = 35 км;
+ *  • наклонная (заданы rainHeightKm и elevationDeg): P.838-3 §1,
+ *    Ls = (hR − hs)/sin θ, ограничена длиной трассы.
  */
 export function rainLossDb(
   distanceM: number,
   rainRateMmH: number,
   freqMhz: number,
   pol: 'vertical' | 'horizontal' | 'circular',
+  opts?: { rainHeightKm?: number; stationHeightM?: number; elevationDeg?: number },
 ): number {
   if (rainRateMmH <= 0) return 0
   const dKm = distanceM / 1000
   const gamma = rainSpecificAttenuationDbKm(rainRateMmH, freqMhz, pol)
+  const { rainHeightKm, stationHeightM = 0, elevationDeg } = opts ?? {}
+  if (rainHeightKm !== undefined && elevationDeg !== undefined) {
+    // Наклонный путь (P.838-3 §1): Ls = (hR − hs)/sin θ, cap по длине трассы
+    const sinEl = Math.sin((Math.max(elevationDeg, 0.5) * Math.PI) / 180)
+    const lsM = sinEl > 0 ? (rainHeightKm * 1000 - stationHeightM) / sinEl : Infinity
+    const pathKm = Number.isFinite(lsM) && lsM > 0 ? Math.min(distanceM, lsM) / 1000 : dKm
+    return gamma * pathKm
+  }
   const dEff = dKm / (1 + dKm / 35)
   return gamma * dEff
 }
@@ -104,9 +115,23 @@ export function gasSpecificAttenuationDbKm(
   return Math.max(0, goCont + goWing + gwCont + gwLine)
 }
 
-/** Потери в атмосферных газах на трассе (интегрирование по высотным профилям — упрощённо через зенитный путь). */
-export function gasesLossDb(distanceM: number, freqMhz: number, elevationDeg = 5): number {
-  const g = gasSpecificAttenuationDbKm(freqMhz)
+/**
+ * Потери в атмосферных газах на трассе (интегрирование по высотным профилям — упрощённо через зенитный путь).
+ * env — параметры среды: плотность водяного пара и давление (из карт ITU P.836/h0 или вручную);
+ * без env — стандартная атмосфера (P = 1013.25 гПа, ρ = 7.5 г/м³, T = 288.15 K).
+ */
+export function gasesLossDb(
+  distanceM: number,
+  freqMhz: number,
+  elevationDeg = 5,
+  env?: { waterVaporGM3?: number; pressureHPa?: number; temperatureK?: number },
+): number {
+  const g = gasSpecificAttenuationDbKm(
+    freqMhz,
+    env?.pressureHPa ?? 1013.25,
+    env?.waterVaporGM3 ?? 7.5,
+    env?.temperatureK ?? 288.15,
+  )
   if (!isFinite(g) || g < 0) return 0
   // Тропосферный путь: эффективная высота однородной атмосферы ~ 2 км (кислород) + 2 км (пар)
   const hEffKm = Math.min(distanceM / 1000, 3.2)

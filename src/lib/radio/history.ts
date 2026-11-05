@@ -173,6 +173,17 @@ export async function listItuMaps(): Promise<{ name: string; size: number }[]> {
   return all.map((t) => ({ name: t.name, size: t.text.length }))
 }
 
+/** Чтение карты ITU из кэша (для участия продуктов в расчёте). */
+export async function getItuMap(name: string): Promise<string | null> {
+  const rec = await tx<{ name: string; text: string } | undefined>(STORE_ITU_MAPS, 'readonly', (s) => s.get(name) as IDBRequest<{ name: string; text: string } | undefined>)
+  return rec?.text ?? null
+}
+
+/** Удаление карты ITU из кэша. */
+export async function deleteItuMap(name: string): Promise<void> {
+  await tx(STORE_ITU_MAPS, 'readwrite', (s) => s.delete(name) as unknown as IDBRequest<undefined>)
+}
+
 /** Кэш конвертированных SXF/RSC (clutter) в IndexedDB — данные не теряются при перезагрузке. */
 export async function putClutterCache(gj: unknown): Promise<void> {
   await tx(STORE_CLUTTER, 'readwrite', (s) => s.put({ key: 'clutter', gj }) as unknown as IDBRequest<IDBValidKey>)

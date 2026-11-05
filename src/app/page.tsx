@@ -31,11 +31,15 @@ export default function Home() {
   const backend = useRadioStore((s) => s.backend)
   const backendAvailable = useRadioStore((s) => s.backendAvailable)
   const checkBackend = useRadioStore((s) => s.checkBackend)
+  const loadItuMaps = useRadioStore((s) => s.loadItuMaps)
   const [tab, setTab] = useState('calc')
 
   useEffect(() => {
     void checkBackend()
-  }, [checkBackend])
+    // Цифровые продукты ITU из кэша браузера — сразу доступны расчёту,
+    // независимо от того, открывалась ли вкладка «Карты»
+    void loadItuMaps()
+  }, [checkBackend, loadItuMaps])
 
   return (
     <div className="min-h-screen flex flex-col bg-background">

@@ -28,6 +28,8 @@ export function resetStore() {
     hgtTiles: [],
     clutter: null,
     demInfo: 'Синтетический рельеф (demo)',
+    ituGrids: {},
+    ituLoadErrors: {},
     calculating: false,
     result: null,
     budget: null,

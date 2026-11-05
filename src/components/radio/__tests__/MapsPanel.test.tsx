@@ -62,6 +62,11 @@ function fileInput(accept: string): HTMLInputElement {
   return input
 }
 
+/** Чтение реального файла продукта ITU из фикстур (копии данных пользователя). */
+function ituFixture(name: string): string {
+  return readFileSync(path.resolve(process.cwd(), `tests/fixtures/itu/${name}`), 'utf-8')
+}
+
 describe('карты ITU: валидация загрузки', () => {
   it('файл с недопустимым расширением → ошибка без упоминания ТЗ', async () => {
     render(<MapsPanel />)
@@ -102,6 +107,17 @@ describe('карты ITU: валидация загрузки', () => {
     render(<MapsPanel />)
     uploadFile(fileInput('.txt,.zip'), new File(['x'], 'p837.txt'))
     await waitFor(() => expect(screen.getByText(/Сервис недоступен/)).toBeInTheDocument())
+    vi.unstubAllGlobals()
+  })
+
+  it('в http-режиме при недоступном сервисе известный продукт всё равно сохраняется локально и участвует в расчёте', async () => {
+    useRadioStore.setState({ backend: 'http' })
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+    render(<MapsPanel />)
+    uploadFile(fileInput('.txt,.zip'), new File([ituFixture('DN_Median.txt')], 'DN_Median.txt'))
+    await waitFor(() => expect(screen.getByText(/Сервис недоступен.*сохранён локально/u)).toBeInTheDocument())
+    expect(useRadioStore.getState().ituGrids['DN_Median.txt']).toBeDefined()
+    await waitFor(() => expect(screen.getByText(/1 из 14/)).toBeInTheDocument())
     vi.unstubAllGlobals()
   })
 })
@@ -248,6 +264,63 @@ describe('здания и растительность: конвертация S
     await user.click(screen.getByRole('button', { name: /Очистить данные/ }))
     await waitFor(() => expect(useRadioStore.getState().clutter).toBeNull())
     expect(await getClutterCache()).toBeNull()
+  })
+})
+
+describe('продукты ITU-R P.2001-6: таблица участия в расчёте', () => {
+  beforeEach(async () => {
+    // Чистый кэш карт: предыдущие тесты файла могут оставлять файлы в IndexedDB
+    const { listItuMaps, deleteItuMap } = await import('@/lib/radio/history')
+    for (const m of await listItuMaps()) await deleteItuMap(m.name)
+    useRadioStore.setState({ ituGrids: {}, ituLoadErrors: {} })
+  })
+
+  it('таблица показывает все 14 продуктов Table 3 и счётчик 0 из 14', () => {
+    render(<MapsPanel />)
+    expect(screen.getByText('DN_Median.txt')).toBeInTheDocument()
+    expect(screen.getByText('dndz_01.txt')).toBeInTheDocument()
+    expect(screen.getByText('TropoClim.txt')).toBeInTheDocument()
+    expect(screen.getByText('Surfwv_50_fixed.txt')).toBeInTheDocument()
+    expect(screen.getByText('FoEs50.txt')).toBeInTheDocument()
+    expect(screen.getByText('h0.txt')).toBeInTheDocument()
+    expect(screen.getByText(/0 из 14/)).toBeInTheDocument()
+  })
+
+  it('загрузка реального DN_Median.txt: продукт в store, счётчик 1 из 14, сообщение про участие в расчёте', async () => {
+    render(<MapsPanel />)
+    uploadFile(fileInput('.txt,.zip'), new File([ituFixture('DN_Median.txt')], 'DN_Median.txt'))
+    await waitFor(() => expect(screen.getByText(/и участвует в расчёте/)).toBeInTheDocument())
+    expect(useRadioStore.getState().ituGrids['DN_Median.txt']).toBeDefined()
+    await waitFor(() => expect(screen.getByText(/1 из 14/)).toBeInTheDocument())
+    expect(screen.getAllByText('загружено').length).toBe(1)
+  })
+
+  it('загрузка TropoClim.txt (360×720, зоны) принимается и участвует', async () => {
+    render(<MapsPanel />)
+    uploadFile(fileInput('.txt,.zip'), new File([ituFixture('TropoClim.txt')], 'TropoClim.txt'))
+    await waitFor(() => expect(screen.getByText(/Карта TropoClim\.txt.*сохранена в браузере/)).toBeInTheDocument())
+    expect(useRadioStore.getState().ituGrids['TropoClim.txt']).toBeDefined()
+  })
+
+  it('удаление продукта убирает его из store и кэша, счётчик возвращается к 0 из 14', async () => {
+    render(<MapsPanel />)
+    uploadFile(fileInput('.txt,.zip'), new File([ituFixture('DN_Median.txt')], 'DN_Median.txt'))
+    await waitFor(() => expect(useRadioStore.getState().ituGrids['DN_Median.txt']).toBeDefined())
+    const user = userEvent.setup()
+    await user.click(screen.getByTitle('Удалить продукт'))
+    await waitFor(() => expect(useRadioStore.getState().ituGrids['DN_Median.txt']).toBeUndefined())
+    await waitFor(() => expect(screen.getByText(/0 из 14/)).toBeInTheDocument())
+    const { listItuMaps } = await import('@/lib/radio/history')
+    expect((await listItuMaps()).map((m) => m.name)).not.toContain('DN_Median.txt')
+  })
+
+  it('прочие файлы (не продукты) показываются отдельно как «прочие сохранённые»', async () => {
+    render(<MapsPanel />)
+    uploadFile(fileInput('.txt,.zip'), new File(['custom'], 'my_own.txt'))
+    await waitFor(() => expect(screen.getByText(/Прочие сохранённые файлы/)).toBeInTheDocument())
+    expect(screen.getAllByText('my_own.txt').length).toBeGreaterThan(0)
+    // но в продуктовые сетки он не попадает
+    expect(Object.keys(useRadioStore.getState().ituGrids)).toHaveLength(0)
   })
 })
 

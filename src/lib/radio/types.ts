@@ -53,6 +53,8 @@ export interface TransceiverParams {
 export interface AtmosphereParams {
   /** Интенсивность дождя 0.01%, мм/ч (P.837) */
   rainRateMmH?: number
+  /** Источник интенсивности дождя: из карт ITU (R0.01) или вручную */
+  rainSource?: 'itu' | 'user'
   /** Учёт атмосферных газов (P.676) */
   gases: boolean
   /** Учёт растительности (P.833) — требует данных clutter */
@@ -63,6 +65,52 @@ export interface AtmosphereParams {
   temperatureK?: number
   /** Давление, гПа */
   pressureHPa?: number
+}
+
+/**
+ * Снимок условий из цифровых продуктов ITU-R P.2001-6 (Table 3),
+ * извлечённых в точках трассы (среднее концов A и Б).
+ * Отсутствующее значение (undefined) — продукт не загружен.
+ */
+export interface ItuEnvironmentData {
+  /** Плотность водяного пара у поверхности, г/м³ (Surfwv_50_fixed.txt, P.836-4) */
+  rho50?: number
+  /** Интенсивность дождя Pr6, мм/ч (Esarain_Pr6_v5.txt, P.837-5) */
+  pr6?: number
+  /** Суммарная масса дождя Mt, кг·м⁻²·год⁻¹ (Esarain_Mt_v5.txt, P.837-5) */
+  rainMassMt?: number
+  /** Вероятность дождя β, доля года 0…1 (Esarain_Beta_v5.txt, P.837-5) */
+  beta0?: number
+  /** Вероятность дождя P0, % — производная P.837-6 (шаг 4) от Pr6, Mt, β */
+  rainProbP0?: number
+  /** Интенсивность дождя R0.01, мм/ч — производная P.837-6 (шаг 5) от Pr6, Mt, β */
+  rainRate001?: number
+  /** Высота дождя (изотерма 0 °C) h0, км (h0.txt, P.839-4) */
+  isothermH0Km?: number
+  /** Медианный градиент рефракции ΔN, N/км (DN_Median.txt, P.453) */
+  dnMedian?: number
+  /** Градиент, превышаемый 0.1 % времени dN1, N/км (dndz_01.txt, P.453-10) */
+  dndz01?: number
+  /** Наклон подрефрактивной ветви CDF, N/км (DN_SubSlope.txt, P.453) */
+  dnSubSlope?: number
+  /** Наклон сверхрефрактивной ветви CDF, N/км (DN_SupSlope.txt, P.453) */
+  dnSupSlope?: number
+  /** Климатическая зона тропосферного рассеяния 1–14 (TropoClim.txt, Annex E) */
+  tropoZone?: number
+  /** foEs, превышаемый 0.1 % времени, МГц (FoEs0.1.txt, Annex G) */
+  foEs001?: number
+  /** foEs, превышаемый 1 % времени, МГц (FoEs01.txt, Annex G) */
+  foEs01?: number
+  /** foEs, превышаемый 10 % времени, МГц (FoEs10.txt, Annex G) */
+  foEs10?: number
+  /** foEs, превышаемый 50 % времени, МГц (FoEs50.txt, Annex G) */
+  foEs50?: number
+  /** Медианный k-фактор из DN_Median: k = 157/(157 + ΔN) (P.453) */
+  k50?: number
+  /** k-фактор для 0.1 % времени из dndz_01 (P.453) */
+  k01?: number
+  /** Файлы продуктов, значения которых вошли в снимок */
+  usedProducts: string[]
 }
 
 export interface EquipmentParams {
@@ -107,7 +155,11 @@ export interface CalculationInput {
   timePercents: number[]
   /** Рефракция: фактор к (по умолчанию 4/3) */
   kFactor: number
+  /** Источник k-фактора: из карты DN_Median (P.453) или вручную */
+  kFactorSource?: 'itu' | 'user'
   atmosphere: AtmosphereParams
+  /** Условия из цифровых продуктов ITU-R P.2001-6 (заполняется при загруженных картах) */
+  environment?: ItuEnvironmentData
   /** epsilon и sigma поверхности (P.527) */
   epsilon: number
   sigma: number

@@ -19,13 +19,14 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { getDeviceId, putSrtmTile, listSrtmTiles, getSrtmTile, getClutterCache, putClutterCache, clearClutterCache } from '@/lib/radio/history'
+import { getDeviceId, putSrtmTile, listSrtmTiles, getSrtmTile, getClutterCache, putClutterCache, clearClutterCache, listItuMaps } from '@/lib/radio/history'
 import { validateClutter, type ClutterGeoJson, type HgtTile, tileBounds, pointInTiles } from '@/lib/radio/terrain'
 import { parseHgt } from '@/lib/radio/terrain'
 import { parseSxf, parseRscNames, convertSxfToClutter, mergeClutter } from '@/lib/radio/sxf'
 import { apiUrl } from '@/lib/radio/models/api'
 import { LIMITS } from '@/lib/radio/constants'
-import { Map as MapIcon, Upload, Trash2, Mountain, TreePine, Waves, FileBox, RefreshCw } from 'lucide-react'
+import { ITU_PRODUCTS, ituProductKey } from '@/lib/radio/itu-env'
+import { Map as MapIcon, Upload, Trash2, Mountain, TreePine, Waves, FileBox, RefreshCw, Globe2 } from 'lucide-react'
 
 interface ItuMapInfo {
   name: string
@@ -122,7 +123,15 @@ export function MapsPanel() {
   const pointA = useRadioStore((s) => s.pointA)
   const pointB = useRadioStore((s) => s.pointB)
 
+  // Цифровые продукты ITU (Table 3): сетки, ошибки, действия
+  const ituGrids = useRadioStore((s) => s.ituGrids)
+  const ituLoadErrors = useRadioStore((s) => s.ituLoadErrors)
+  const addItuGrid = useRadioStore((s) => s.addItuGrid)
+  const removeItuGrid = useRadioStore((s) => s.removeItuGrid)
+  const loadItuMaps = useRadioStore((s) => s.loadItuMaps)
+
   const [maps, setMaps] = useState<ItuMapInfo[]>([])
+  const [localItuFiles, setLocalItuFiles] = useState<ItuMapInfo[]>([])
   const [message, setMessage] = useState<string | null>(null)
   const [mapError, setMapError] = useState<string | null>(null)
   const [deviceId, setDeviceId] = useState('')
@@ -139,6 +148,19 @@ export function MapsPanel() {
     const t = setTimeout(() => setDeviceId(getDeviceId()), 0)
     return () => clearTimeout(t)
   }, [])
+
+  // Загрузка сохранённых карт ITU из IndexedDB при старте —
+  // продукты становятся доступны расчёту (ituGrids в store)
+  useEffect(() => {
+    void loadItuMaps()
+    void (async () => {
+      try {
+        setLocalItuFiles(await listItuMaps())
+      } catch {
+        // IndexedDB недоступна
+      }
+    })()
+  }, [loadItuMaps])
 
   // Загрузка кэша SXF-данных (clutter) из IndexedDB при старте
   useEffect(() => {
@@ -210,25 +232,43 @@ export function MapsPanel() {
     if (backend === 'http') {
       const fd = new FormData()
       fd.append('file', file)
+      let serverError: string | null = null
       try {
         const res = await fetch(apiUrl('/maps/upload'), { method: 'POST', body: fd })
         if (res.status === 413) {
-          setMapError('Превышен лимит размера файла (HTTP 413 Payload Too Large)')
-          return
+          serverError = 'Превышен лимит размера файла на сервере (HTTP 413 Payload Too Large)'
+        } else if (!res.ok) {
+          serverError = `Ошибка загрузки на сервер: ${(await res.text()).slice(0, 200)}`
         }
-        if (!res.ok) {
-          const t = await res.text()
-          setMapError(`Ошибка загрузки: ${t.slice(0, 200)}`)
-          return
-        }
-        setMessage(`Карта ${file.name} загружена (${(file.size / 1e3).toFixed(0)} кБ)`)
-        await refreshMaps()
       } catch (e) {
-        setMapError(`Сервис недоступен: ${e instanceof Error ? e.message : e}`)
+        serverError = `Сервис недоступен: ${e instanceof Error ? e.message : e}`
       }
+      // Локальная копия: продукты участвуют в расчёте независимо от доступности сервера.
+      // Известный продукт с битой сеткой — отказ; неизвестный файл — только в кэш.
+      let localNote = ''
+      if (ext === 'txt') {
+        const text = await file.text()
+        const known = ituProductKey(file.name) !== undefined
+        const added = await addItuGrid(file.name, text)
+        if (known && !added.ok) {
+          setMapError(`ITU-карта не прошла проверку: ${added.error}`)
+          return
+        }
+        if (added.ok) {
+          localNote = added.info ? `; ${added.info} — используется в расчёте` : ' — используется в расчёте'
+        }
+        const { putItuMap } = await import('@/lib/radio/history')
+        await putItuMap(file.name, text)
+      }
+      if (serverError) {
+        setMapError(`${serverError}. Файл сохранён локально (IndexedDB)${localNote || ''}`)
+      } else {
+        setMessage(`Карта ${file.name} загружена на сервер (${(file.size / 1e3).toFixed(0)} кБ)${localNote}`)
+      }
+      await refreshMaps()
     } else {
       // wasm-режим: карта в IndexedDB; известные продукты P.2001-6 (Table 3)
-      // проверяются на соответствие сетке (размеры, шаги, числовые значения)
+      // проверяются на соответствие сетке и сразу участвуют в расчёте
       const text = await file.text()
       const { validateItuFile } = await import('@/lib/radio/itu-grid')
       const v = validateItuFile(file.name, text)
@@ -238,9 +278,12 @@ export function MapsPanel() {
       }
       const { putItuMap } = await import('@/lib/radio/history')
       await putItuMap(file.name, text)
+      const added = await addItuGrid(file.name, text)
+      await loadItuMaps()
+      setLocalItuFiles(await listItuMaps())
       setMessage(
         v.info
-          ? `Карта ${file.name} (${v.info}) сохранена в браузере (IndexedDB, wasm-режим)`
+          ? `Карта ${file.name} (${v.info}) сохранена в браузере (IndexedDB, wasm-режим)${added.ok ? ' и участвует в расчёте' : ''}`
           : `Карта ${file.name} сохранена в браузере (IndexedDB, wasm-режим)`,
       )
     }
@@ -343,12 +386,17 @@ export function MapsPanel() {
   }
 
   const deleteMap = async (name: string) => {
-    try {
-      await fetch(apiUrl(`/maps/${encodeURIComponent(name)}`), { method: 'DELETE' })
-      await refreshMaps()
-    } catch {
-      setMapError('Не удалось удалить карту')
+    if (backend === 'http') {
+      try {
+        await fetch(apiUrl(`/maps/${encodeURIComponent(name)}`), { method: 'DELETE' })
+        await refreshMaps()
+      } catch {
+        setMapError('Не удалось удалить карту')
+      }
     }
+    // Локальная копия (wasm-режим и зеркала http) удаляется всегда
+    await removeItuGrid(name)
+    setLocalItuFiles(await listItuMaps())
   }
 
   // Живая проверка: попадает ли трасса в покрытие тайлов
@@ -356,6 +404,12 @@ export function MapsPanel() {
     hgtTiles.length === 0
       ? null
       : pointInTiles(pointA.lat, pointA.lon, hgtTiles) && pointInTiles(pointB.lat, pointB.lon, hgtTiles)
+
+  // Сводка по продуктам Table 3: сколько загружено; прочие файлы без проверки сетки
+  const loadedCount = ITU_PRODUCTS.filter((p) => ituGrids[p.file] !== undefined).length
+  const localOtherFiles = localItuFiles.filter(
+    (f) => ituProductKey(f.name) === undefined && ituGrids[f.name] === undefined,
+  )
 
   return (
     <div className="space-y-4">
@@ -524,9 +578,10 @@ export function MapsPanel() {
             При превышении — ошибка 413 Payload Too Large. Валидация: расширение, размер, структура, версия.
             Известные цифровые продукты ITU-R P.2001-6 (DN_*, dndz_01, Esarain_*, FoEs*, h0, Surfwv_50_fixed,
             TropoClim — Table 3 рекомендации) дополнительно проверяются: размеры сетки 121×241 (1.5°) или
-            161×321 (1.125°), 360×720 для TropoClim, числовые значения.
+            161×321 (1.125°), 360×720 для TropoClim, числовые значения. Загруженные продукты
+            <b> автоматически участвуют в расчёте</b> (см. таблицу ниже).
             {backend === 'http'
-              ? ' Загрузка на сервер (том ./data/itu_maps).'
+              ? ' Загрузка на сервер (том ./data/itu_maps) + локальная копия для расчёта.'
               : ' wasm-режим: карты хранятся в браузере (IndexedDB).'}
           </p>
           <div className="flex items-center gap-2">
@@ -536,6 +591,11 @@ export function MapsPanel() {
                 <span><Upload className="h-4 w-4 mr-1" /> Загрузить карту ITU</span>
               </Button>
             </label>
+            {maps.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                На сервере: <b>{maps.length}</b> карт(ы)
+              </p>
+            )}
           </div>
           {maps.length > 0 && (
             <Table>
@@ -561,6 +621,91 @@ export function MapsPanel() {
               </TableBody>
             </Table>
           )}
+
+          <div className="border-t pt-3">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <Globe2 className="h-4 w-4 text-emerald-600" />
+              <p className="text-sm font-semibold">
+                Продукты ITU-R P.2001-6 (Table 3) — участие в расчёте
+              </p>
+              <Badge variant={loadedCount === ITU_PRODUCTS.length ? 'default' : 'secondary'} className={loadedCount === ITU_PRODUCTS.length ? 'bg-emerald-600' : ''}>
+                {loadedCount} из {ITU_PRODUCTS.length}
+              </Badge>
+              {loadedCount === ITU_PRODUCTS.length && (
+                <Badge className="bg-emerald-600">Полный комплект — метод P.2001-6 обеспечен данными</Badge>
+              )}
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Файл</TableHead>
+                  <TableHead>Параметр</TableHead>
+                  <TableHead className="hidden md:table-cell">Рекомендация</TableHead>
+                  <TableHead>Статус</TableHead>
+                  <TableHead className="hidden lg:table-cell">Участие в расчёте</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {ITU_PRODUCTS.map((p) => {
+                  const loaded = ituGrids[p.file] !== undefined
+                  const err = ituLoadErrors[p.file]
+                  return (
+                    <TableRow key={p.file}>
+                      <TableCell className="text-xs font-mono">{p.file}</TableCell>
+                      <TableCell className="text-xs">{p.param}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground hidden md:table-cell">
+                        {p.origin} {p.ref}
+                      </TableCell>
+                      <TableCell>
+                        {loaded ? (
+                          <Badge className="bg-emerald-600">загружено</Badge>
+                        ) : err ? (
+                          <Badge variant="destructive" title={err}>ошибка</Badge>
+                        ) : (
+                          <Badge variant="secondary">не загружено</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{p.usage}</TableCell>
+                      <TableCell className="text-right">
+                        {loaded && (
+                          <Button size="sm" variant="ghost" title="Удалить продукт" onClick={() => void deleteMap(p.file)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+            <p className="text-[11px] text-muted-foreground mt-2">
+              Условия извлекаются в точках трассы (среднее концов A и Б): ρ (Surfwv_50_fixed) — газы; Pr6/Mt/β
+              (Esarain_*) — модель дождя P.837-6: CCDF R(p) и затухание P.838; h0 — высота дождя (P.839-4);
+              DN_Median/dndz_01 — k-фактор медианы и 0.1 % времени (P.453); зона TropoClim — климатическая поправка
+              многолучёвости (аппроксимация Annex E); FoEs* — диагноз спорадического слоя E (закон секанса).
+              Загруженные продукты перекрывают ручные значения соответствующих параметров.
+            </p>
+            {localOtherFiles.length > 0 && (
+              <div className="mt-2">
+                <p className="text-xs text-muted-foreground mb-1">Прочие сохранённые файлы (без проверки сетки):</p>
+                <div className="flex flex-wrap gap-2">
+                  {localOtherFiles.map((f) => (
+                    <Badge key={f.name} variant="outline" className="font-mono text-xs">
+                      {f.name}
+                      <button
+                        className="ml-1 text-muted-foreground hover:text-destructive"
+                        title="Удалить"
+                        onClick={() => void deleteMap(f.name)}
+                      >
+                        ×
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 

@@ -29,9 +29,13 @@ vi.mock('leaflet', () => {
   return { default: leaflet, ...leaflet }
 })
 
-beforeEach(() => {
+beforeEach(async () => {
   resetStore()
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('backend down')))
+  // IndexedDB (fake-indexeddb) живёт в воркере между файлами — чистим историю,
+  // чтобы тест «пустая история» был детерминированным
+  const { clearHistory, getDeviceId } = await import('@/lib/radio/history')
+  await clearHistory(getDeviceId())
 })
 
 describe('главная страница', () => {

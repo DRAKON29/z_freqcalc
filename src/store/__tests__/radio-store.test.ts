@@ -8,7 +8,10 @@ import { useRadioStore, DEFAULT_EQUIPMENT, DEFAULT_ATMOSPHERE, sk42Of, wgsFromSk
 import { bearingDeg, distanceM } from '@/lib/radio/coordinates'
 import { wgs84ToSk42 } from '@/lib/radio/coordinates'
 import { makeHgtBuffer } from '../../lib/radio/__tests__/terrain-helpers'
+import { findItuGridSpec } from '@/lib/radio/itu-grid'
+import { putItuMap, listItuMaps, getItuMap } from '@/lib/radio/history'
 import type { PropagationResult } from '@/lib/radio/types'
+import type { ItuGrid } from '@/lib/radio/itu-grid'
 
 const initial = () => useRadioStore.getState()
 
@@ -33,6 +36,8 @@ beforeEach(() => {
     backendAvailable: null,
     hgtTiles: [],
     clutter: null,
+    ituGrids: {},
+    ituLoadErrors: {},
     calculating: false,
     result: null,
     budget: null,
@@ -277,6 +282,105 @@ describe('resetResults', () => {
     expect(s.dynamicsAll).toEqual([])
     expect(s.lastError).toBeNull()
     expect(s.pointA).toEqual({ lat: 55.7558, lon: 37.6173 })
+  })
+})
+
+/** Сетка-константа по спецификации продукта (для тестов среды ITU). */
+function constGrid(file: string, value: number): ItuGrid {
+  const s = findItuGridSpec(file)
+  if (!s) throw new Error(`нет спецификации для ${file}`)
+  const row = new Array<number>(s.cols).fill(value)
+  return { spec: s, rows: s.rows, cols: s.cols, values: Array.from({ length: s.rows }, () => [...row]) }
+}
+
+describe('цифровые продукты ITU-R P.2001-6: участие в расчёте', () => {
+  it('addItuGrid разбирает валидную сетку и сохраняет по каноническому имени', async () => {
+    const grid = constGrid('DN_Median.txt', -43)
+    const text = grid.values.map((r) => r.join(' ')).join('\n')
+    const res = await initial().addItuGrid('dn_median.txt', text)
+    expect(res.ok).toBe(true)
+    expect(initial().ituGrids['DN_Median.txt']).toBeDefined()
+    expect(initial().ituLoadErrors['dn_median.txt']).toBeUndefined()
+  })
+
+  it('addItuGrid отклоняет битую сетку известного продукта и фиксирует ошибку', async () => {
+    const grid = constGrid('DN_Median.txt', -43)
+    const broken = grid.values.slice(0, -1).map((r) => r.join(' ')).join('\n') // 120 строк вместо 121
+    const res = await initial().addItuGrid('DN_Median.txt', broken)
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain('121')
+    expect(Object.keys(initial().ituGrids)).toHaveLength(0)
+    expect(initial().ituLoadErrors['DN_Median.txt']).toBeTruthy()
+  })
+
+  it('calculate() подмешивает среду ITU: R(p) → дождь из карт, DN_Median → k-фактор', async () => {
+    useRadioStore.setState({
+      ituGrids: {
+        // DN_Median хранит модуль градиента (43 → ΔN = −43)
+        'DN_Median.txt': constGrid('DN_Median.txt', 43),
+        'Esarain_Pr6_v5.txt': constGrid('Esarain_Pr6_v5.txt', 42),
+        'Esarain_Mt_v5.txt': constGrid('Esarain_Mt_v5.txt', 483.5),
+        'Esarain_Beta_v5.txt': constGrid('Esarain_Beta_v5.txt', 0.26),
+        'Surfwv_50_fixed.txt': constGrid('Surfwv_50_fixed.txt', 7.8),
+        'TropoClim.txt': constGrid('TropoClim.txt', 5),
+      },
+    })
+    await initial().calculate()
+    const s = initial()
+    expect(s.lastError).toBeNull()
+    const li = s.lastInput!
+    expect(li.environment).toBeDefined()
+    expect(li.environment!.pr6).toBeCloseTo(42, 6)
+    expect(li.environment!.rho50).toBeCloseTo(7.8, 6)
+    expect(li.environment!.tropoZone).toBe(5)
+    expect(li.environment!.k50).toBeCloseTo(157 / (157 - 43), 6)
+    expect(li.environment!.usedProducts).toHaveLength(6)
+    // производные P.837-6 извлечены и перекрывают ручные значения
+    expect(li.environment!.rainProbP0).toBeGreaterThan(1)
+    expect(li.environment!.rainRate001).toBeGreaterThan(20)
+    expect(li.environment!.rainRate001).toBeLessThan(60)
+    expect(li.atmosphere.rainSource).toBe('itu')
+    expect(li.atmosphere.rainRateMmH).toBeCloseTo(li.environment!.rainRate001!, 6)
+    expect(li.kFactorSource).toBe('itu')
+    expect(li.kFactor).toBeCloseTo(157 / (157 - 43), 6)
+  })
+
+  it('без продуктов среда не добавляется и источники остаются ручными', async () => {
+    await initial().calculate()
+    const li = initial().lastInput!
+    expect(li.environment).toBeUndefined()
+    expect(li.kFactorSource).toBe('user')
+    expect(li.atmosphere.rainSource).toBeUndefined()
+  })
+
+  it('removeItuGrid удаляет сетку из состояния и из кэша IndexedDB', async () => {
+    const grid = constGrid('Esarain_Pr6_v5.txt', 42)
+    const text = grid.values.map((r) => r.join(' ')).join('\n')
+    await initial().addItuGrid('Esarain_Pr6_v5.txt', text)
+    expect(Object.keys(initial().ituGrids)).toHaveLength(1)
+    await initial().removeItuGrid('Esarain_Pr6_v5.txt')
+    expect(Object.keys(initial().ituGrids)).toHaveLength(0)
+    expect((await listItuMaps()).map((m) => m.name)).not.toContain('Esarain_Pr6_v5.txt')
+  })
+
+  it('loadItuMaps восстанавливает продукты из IndexedDB после перезапуска', async () => {
+    const grid = constGrid('dndz_01.txt', -160)
+    const text = grid.values.map((r) => r.join(' ')).join('\n')
+    await putItuMap('dndz_01.txt', text)
+    await initial().loadItuMaps()
+    const stored = initial().ituGrids['dndz_01.txt']
+    expect(stored).toBeDefined()
+    expect(stored.spec.name).toBe('dndz_01.txt')
+    expect(stored.values[0][0]).toBe(-160)
+    const raw = await getItuMap('dndz_01.txt')
+    expect(raw).not.toBeNull()
+  })
+
+  it('повреждённая сохранённая карта попадает в ituLoadErrors, а не в сетки', async () => {
+    await putItuMap('h0.txt', 'мусор вместо сетки')
+    await initial().loadItuMaps()
+    expect(initial().ituGrids['h0.txt']).toBeUndefined()
+    expect(initial().ituLoadErrors['h0.txt']).toBeTruthy()
   })
 })
 

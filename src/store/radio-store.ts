@@ -22,8 +22,10 @@ import { createModel, defaultBackend } from '@/lib/radio/models'
 import { computeLinkBudget } from '@/lib/radio/budget'
 import { buildProfile, createHgtDem, createSyntheticDem, makeClutterSampler, parseHgt, pathTileCoverage, type ClutterGeoJson, type HgtTile } from '@/lib/radio/terrain'
 import { distanceM, bearingDeg, wgs84ToSk42, sk42ToWgs84 } from '@/lib/radio/coordinates'
-import { getDeviceId, saveHistory, syncEntry } from '@/lib/radio/history'
+import { getDeviceId, saveHistory, syncEntry, listItuMaps, getItuMap, deleteItuMap } from '@/lib/radio/history'
 import { calculationInputSchema, dynamicParamsSchema } from '@/lib/radio/validation'
+import { ituEnvironmentAt, ituProductKey, type ItuGridSet } from '@/lib/radio/itu-env'
+import type { ItuGrid } from '@/lib/radio/itu-grid'
 
 export const DEFAULT_EQUIPMENT: EquipmentParams = {
   mode: 'simple',
@@ -66,6 +68,13 @@ function buildInput(s: RadioState): CalculationInput {
   const clutterSampler = s.clutter ? makeClutterSampler(s.clutter) : undefined
   const profile = buildProfile(s.pointA, s.pointB, dem, clutterSampler)
   const dist = distanceM(s.pointA, s.pointB)
+
+  // Условия из цифровых продуктов ITU-R P.2001-6: извлечение в точках трассы.
+  // Загруженные продукты перекрывают ручные значения (R0.01 → дождь, DN_Median → k-фактор).
+  const env = Object.keys(s.ituGrids).length > 0 ? ituEnvironmentAt(s.ituGrids, s.pointA, s.pointB) : null
+  const ituRain = env?.rainRate001
+  const ituK = env?.k50
+
   return {
     frequencyMhz: s.frequencyMhz,
     polarization: s.polarization,
@@ -80,8 +89,14 @@ function buildInput(s: RadioState): CalculationInput {
     txHeightM: s.txHeightM,
     rxHeightM: s.rxHeightM,
     timePercents: [50, 90, 99, 99.9],
-    kFactor: s.kFactor,
-    atmosphere: s.atmosphere,
+    kFactor: ituK ?? s.kFactor,
+    kFactorSource: ituK !== undefined ? 'itu' : 'user',
+    atmosphere: {
+      ...s.atmosphere,
+      rainRateMmH: ituRain ?? s.atmosphere.rainRateMmH,
+      rainSource: ituRain !== undefined ? 'itu' : s.atmosphere.rainSource === 'itu' ? undefined : s.atmosphere.rainSource,
+    },
+    environment: env && env.usedProducts.length > 0 ? env : undefined,
     epsilon: 15,
     sigma: 0.005,
     climateZone: s.climateZone,
@@ -111,6 +126,10 @@ export interface RadioState {
   hgtTiles: HgtTile[]
   clutter: ClutterGeoJson | null
   demInfo: string
+
+  // Цифровые продукты ITU-R P.2001-6 (Table 3): разобранные сетки + ошибки проверки
+  ituGrids: ItuGridSet
+  ituLoadErrors: Record<string, string>
 
   // Результаты
   calculating: boolean
@@ -143,6 +162,12 @@ export interface RadioState {
   addHgtTile: (buffer: ArrayBuffer, filename: string) => string | null
   setClutter: (gj: ClutterGeoJson | null) => void
   setAltitudes: (list: number[]) => void
+  /** Разбор и добавление продукта ITU (после сохранения в кэш IndexedDB). */
+  addItuGrid: (name: string, text: string) => Promise<{ ok: boolean; error?: string; info?: string }>
+  /** Удаление продукта ITU из состояния и кэша. */
+  removeItuGrid: (name: string) => Promise<void>
+  /** Загрузка сохранённых карт ITU из IndexedDB и разбор всех продуктов. */
+  loadItuMaps: () => Promise<void>
   applyDynamicsFromTrack: () => void
   checkBackend: () => Promise<boolean>
   calculate: () => Promise<void>
@@ -171,6 +196,9 @@ export const useRadioStore = create<RadioState>((set, get) => ({
   hgtTiles: [],
   clutter: null,
   demInfo: 'Синтетический рельеф (demo)',
+
+  ituGrids: {},
+  ituLoadErrors: {},
 
   calculating: false,
   result: null,
@@ -225,6 +253,74 @@ export const useRadioStore = create<RadioState>((set, get) => ({
   setClutter: (gj) => set({ clutter: gj }),
 
   setAltitudes: (list) => set({ altitudes: list }),
+
+  addItuGrid: async (name, text) => {
+    const { parseItuGrid, ItuGridParseError, validateItuFile } = await import('@/lib/radio/itu-grid')
+    const v = validateItuFile(name, text)
+    if (!v.ok) {
+      set((s) => ({ ituLoadErrors: { ...s.ituLoadErrors, [name]: v.error ?? 'ошибка' } }))
+      return { ok: false, error: v.error }
+    }
+    try {
+      const grid = parseItuGrid(name, text)
+      set((s) => ({
+        ituGrids: { ...s.ituGrids, [grid.spec.name]: grid },
+        ituLoadErrors: Object.fromEntries(Object.entries(s.ituLoadErrors).filter(([k]) => k !== name && k !== grid.spec.name)),
+      }))
+      return { ok: true, info: v.info }
+    } catch (e) {
+      const err = e instanceof ItuGridParseError || e instanceof Error ? e.message : String(e)
+      set((s) => ({ ituLoadErrors: { ...s.ituLoadErrors, [name]: err } }))
+      return { ok: false, error: err }
+    }
+  },
+
+  removeItuGrid: async (name) => {
+    const key = ituProductKey(name) ?? name
+    set((s) => {
+      const grids = { ...s.ituGrids }
+      delete grids[key]
+      delete grids[name]
+      const errs = { ...s.ituLoadErrors }
+      delete errs[key]
+      delete errs[name]
+      return { ituGrids: grids, ituLoadErrors: errs }
+    })
+    try {
+      await deleteItuMap(name)
+    } catch {
+      // кэш недоступен — не критично
+    }
+  },
+
+  loadItuMaps: async () => {
+    try {
+      const stored = await listItuMaps()
+      const grids: Record<string, ItuGrid> = {}
+      const errors: Record<string, string> = {}
+      const { parseItuGrid, validateItuFile } = await import('@/lib/radio/itu-grid')
+      for (const { name } of stored) {
+        const text = await getItuMap(name)
+        if (text === null) continue
+        const v = validateItuFile(name, text)
+        if (!v.ok) {
+          errors[name] = v.error ?? 'ошибка проверки'
+          continue
+        }
+        try {
+          const grid = parseItuGrid(name, text)
+          grids[grid.spec.name] = grid
+        } catch {
+          // повреждённая сетка пропускается
+        }
+      }
+      // Слияние (а не перезапись): свежие продукты, добавленные до завершения
+      // фоновой загрузки кэша, не теряются
+      set((s) => ({ ituGrids: { ...grids, ...s.ituGrids }, ituLoadErrors: { ...s.ituLoadErrors, ...errors } }))
+    } catch {
+      // IndexedDB недоступна — игнорируем
+    }
+  },
 
   /** Заполнение параметров динамики по трассе: вручную остаются только высота и скорость. */
   applyDynamicsFromTrack: () => {
