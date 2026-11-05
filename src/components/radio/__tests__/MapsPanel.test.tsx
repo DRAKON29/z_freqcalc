@@ -6,6 +6,8 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { MapsPanel } from '../MapsPanel'
 import { useRadioStore } from '@/store/radio-store'
 import { resetStore } from './test-utils'
@@ -101,6 +103,47 @@ describe('карты ITU: валидация загрузки', () => {
     uploadFile(fileInput('.txt,.zip'), new File(['x'], 'p837.txt'))
     await waitFor(() => expect(screen.getByText(/Сервис недоступен/)).toBeInTheDocument())
     vi.unstubAllGlobals()
+  })
+})
+
+describe('карты ITU: проверка известных продуктов P.2001-6 (реальные файлы)', () => {
+  const dnMedian = () => readFileSync(path.resolve(process.cwd(), 'tests/fixtures/itu/DN_Median.txt'), 'utf-8')
+
+  it('реальный DN_Median.txt сохраняется с описанием сетки 121×241', async () => {
+    render(<MapsPanel />)
+    uploadFile(fileInput('.txt,.zip'), new File([dnMedian()], 'DN_Median.txt'))
+    await waitFor(() =>
+      expect(screen.getByText(/Карта DN_Median\.txt \(ITU-R P\.2001 § 3\.4\.1: сетка 121×241.*сохранена в браузере/)).toBeInTheDocument(),
+    )
+  })
+
+  it('повреждённая сетка DN_Median → ошибка проверки с номером строки и числом столбцов', async () => {
+    render(<MapsPanel />)
+    const broken = dnMedian().split('\n')
+    const row = broken[10].trim().split(/\s+/)
+    row.pop()
+    broken[10] = row.join(' ')
+    uploadFile(fileInput('.txt,.zip'), new File([broken.join('\n')], 'DN_Median.txt'))
+    await waitFor(() =>
+      expect(screen.getByText(/ITU-карта не прошла проверку: DN_Median\.txt: строка 11: ожидается 241 столбцов, получено 240/)).toBeInTheDocument(),
+    )
+  })
+
+  it('известный продукт, но нечисловой мусор → ошибка, файл не сохранён', async () => {
+    render(<MapsPanel />)
+    const { listItuMaps } = await import('@/lib/radio/history')
+    const before = (await listItuMaps()).map((m) => m.name)
+    // заменяем ровно один токен, чтобы проверка столбцов прошла и сработала проверка числа
+    uploadFile(fileInput('.txt,.zip'), new File([dnMedian().replace('40.726', 'CORRUPT')], 'DN_Median.txt'))
+    await waitFor(() => expect(screen.getByText(/нечисловое значение «CORRUPT»/)).toBeInTheDocument())
+    const after = (await listItuMaps()).map((m) => m.name)
+    expect(after.filter((n) => !before.includes(n))).toEqual([])
+  })
+
+  it('неизвестное имя .txt по-прежнему сохраняется без проверки сетки', async () => {
+    render(<MapsPanel />)
+    uploadFile(fileInput('.txt,.zip'), new File(['garbage'], 'my_own.txt'))
+    await waitFor(() => expect(screen.getByText(/Карта my_own\.txt сохранена в браузере/)).toBeInTheDocument())
   })
 })
 

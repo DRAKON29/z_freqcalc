@@ -227,10 +227,22 @@ export function MapsPanel() {
         setMapError(`Сервис недоступен: ${e instanceof Error ? e.message : e}`)
       }
     } else {
-      // wasm-режим: карта в IndexedDB
+      // wasm-режим: карта в IndexedDB; известные продукты P.2001-6 (Table 3)
+      // проверяются на соответствие сетке (размеры, шаги, числовые значения)
+      const text = await file.text()
+      const { validateItuFile } = await import('@/lib/radio/itu-grid')
+      const v = validateItuFile(file.name, text)
+      if (!v.ok) {
+        setMapError(`ITU-карта не прошла проверку: ${v.error}`)
+        return
+      }
       const { putItuMap } = await import('@/lib/radio/history')
-      await putItuMap(file.name, await file.text())
-      setMessage(`Карта ${file.name} сохранена в браузере (IndexedDB, wasm-режим)`)
+      await putItuMap(file.name, text)
+      setMessage(
+        v.info
+          ? `Карта ${file.name} (${v.info}) сохранена в браузере (IndexedDB, wasm-режим)`
+          : `Карта ${file.name} сохранена в браузере (IndexedDB, wasm-режим)`,
+      )
     }
   }
 
@@ -510,6 +522,9 @@ export function MapsPanel() {
           <p className="text-xs text-muted-foreground">
             Формат: .txt (один файл) или .zip (архив). Лимиты: 700 МБ на файл, 1 ГБ на zip.
             При превышении — ошибка 413 Payload Too Large. Валидация: расширение, размер, структура, версия.
+            Известные цифровые продукты ITU-R P.2001-6 (DN_*, dndz_01, Esarain_*, FoEs*, h0, Surfwv_50_fixed,
+            TropoClim — Table 3 рекомендации) дополнительно проверяются: размеры сетки 121×241 (1.5°) или
+            161×321 (1.125°), 360×720 для TropoClim, числовые значения.
             {backend === 'http'
               ? ' Загрузка на сервер (том ./data/itu_maps).'
               : ' wasm-режим: карты хранятся в браузере (IndexedDB).'}
