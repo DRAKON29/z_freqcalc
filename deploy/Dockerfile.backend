@@ -1,0 +1,19 @@
+# Dockerfile для Python-сервиса расчётов (ТЗ 6.1)
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# fastapi + uvicorn; опционально py2001 (если доступен в индексе) и GDAL для SXF
+RUN pip install --no-cache-dir fastapi uvicorn[standard] pillow
+
+# Код сервиса
+COPY mini-services/radio-service/main.py .
+COPY mini-services/radio-service/p2001_lite.py .
+COPY public/py/p2001_lite.py /srv/static/p2001_lite.py
+
+# Данные: карты ITU, clutter, история (том по ТЗ 6.1)
+RUN mkdir -p /data/itu_maps /data/clutter /data/history
+ENV RADIO_DATA_DIR=/data
+
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
