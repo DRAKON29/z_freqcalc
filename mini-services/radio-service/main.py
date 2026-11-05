@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-FastAPI-сервис калькулятора распространения радиоволн (ТЗ 3.1, 4.2.1, 4.6, 4.9, 5.1).
+FastAPI-сервис калькулятора распространения радиоволн.
 
 Эндпоинты:
   GET  /api/health             — состояние сервиса
@@ -15,7 +15,7 @@ FastAPI-сервис калькулятора распространения р�
   DELETE /api/history/{id}     — удаление записи истории
   GET  /api/dem?points=...     — DEM-прокси (AWS Terrain Tiles / Copernicus GLO-30)
 
-Безопасность (ТЗ 3.4): CORS, rate limiting, валидация, лимиты размеров, 413.
+Безопасность: CORS, rate limiting, валидация, лимиты размеров, 413.
 """
 from __future__ import annotations
 
@@ -51,12 +51,12 @@ HISTORY_DB = DATA_DIR / "history" / "history.db"
 for d in [ITU_MAPS_DIR, CLUTTER_FILE.parent, HISTORY_DB.parent]:
     d.mkdir(parents=True, exist_ok=True)
 
-MAX_FILE_BYTES = 700 * 1024 * 1024   # 700 МБ на файл (ТЗ 5.1)
-MAX_ZIP_BYTES = 1024 * 1024 * 1024   # 1 ГБ на zip (ТЗ 5.1)
+MAX_FILE_BYTES = 700 * 1024 * 1024   # 700 МБ на файл
+MAX_ZIP_BYTES = 1024 * 1024 * 1024   # 1 ГБ на zip
 
 app = FastAPI(title="Калькулятор распространения радиоволн — сервис", version="1.0.0")
 
-# CORS (ТЗ 3.4)
+# CORS
 CORS_ORIGINS = os.environ.get("RADIO_CORS_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
@@ -107,7 +107,7 @@ def history_conn():
     return conn
 
 
-# ---------- Карты ITU: валидация (ТЗ 5.1) ----------
+# ---------- Карты ITU: валидация ----------
 
 def validate_itu_txt(text: str) -> None:
     """Проверка структуры карты ITU: заголовок с key = value, наличие version."""
@@ -196,7 +196,7 @@ async def api_calculate(request: Request):
     _validate_input(inp)
 
     if model == "p2001" and _py2001_available():
-        # Приоритетная реализация (ТЗ 4.2.1, 9.2): py2001 + карты ITU
+        # Приоритетная реализация: py2001 + карты ITU
         try:
             import py2001 as _py2001  # type: ignore
             # Полная интеграция py2001 требует карт ITU; при их отсутствии — lite
@@ -249,13 +249,13 @@ async def maps_upload(request: Request, file: UploadFile = File(...)):
     name = file.filename or "map.txt"
     ext = name.lower().rsplit(".", 1)[-1]
     if ext not in ("txt", "zip"):
-        raise HTTPException(422, f"Недопустимое расширение .{ext} — ожидается .txt или .zip (ТЗ 5.1)")
+        raise HTTPException(422, f"Недопустимое расширение .{ext} — ожидается .txt или .zip")
 
     data = await file.read()
     if ext == "txt" and len(data) > MAX_FILE_BYTES:
-        raise HTTPException(413, f"Файл {len(data)/1e6:.0f} МБ превышает лимит 700 МБ (ТЗ 5.1)")
+        raise HTTPException(413, f"Файл {len(data)/1e6:.0f} МБ превышает лимит 700 МБ")
     if ext == "zip" and len(data) > MAX_ZIP_BYTES:
-        raise HTTPException(413, f"Архив {len(data)/1e6:.0f} МБ превышает лимит 1 ГБ (ТЗ 5.1)")
+        raise HTTPException(413, f"Архив {len(data)/1e6:.0f} МБ превышает лимит 1 ГБ")
 
     if ext == "zip":
         validate_itu_zip(data)
@@ -367,7 +367,7 @@ async def history_post(request: Request):
     device_id = body.get("device_id")
     entry = body.get("entry") or {}
     if not device_id:
-        raise HTTPException(400, "device_id обязателен (анонимная привязка, ТЗ 4.9)")
+        raise HTTPException(400, "device_id обязателен (анонимная привязка,)")
     conn = history_conn()
     cur = conn.execute(
         "INSERT INTO history (device_id, created_at, name, model, engine_used, backend,"
@@ -406,7 +406,7 @@ def history_delete(row_id: int, request: Request, device_id: str):
     return {"ok": True}
 
 
-# ---------- DEM-прокси: AWS Terrain Tiles (Copernicus GLO-30 / SRTM, ТЗ 4.3/5.2) ----------
+# ---------- DEM-прокси: AWS Terrain Tiles (Copernicus GLO-30 / SRTM,) ----------
 
 @app.get("/api/dem")
 def dem_proxy(request: Request, lat: float, lon: float, zoom: int = 11):
@@ -444,7 +444,7 @@ def dem_proxy(request: Request, lat: float, lon: float, zoom: int = 11):
         raise HTTPException(502, f"DEM недоступен: {e}. Используется синтетический рельеф в UI.")
 
 
-# ---------- Экспорт CSV (ТЗ 4.9, серверная сторона) ----------
+# ---------- Экспорт CSV ----------
 
 @app.post("/api/export/csv", response_class=PlainTextResponse)
 async def export_csv(request: Request):

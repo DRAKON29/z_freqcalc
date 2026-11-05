@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Офлайн-конвертация SXF + RSC → clutter.geojson (ТЗ 4.6, 5.3) через GDAL/OGR.
+Офлайн-конвертация SXF + RSC → clutter.geojson через GDAL/OGR.
 
 Использование:
     python3 sxf2geojson.py input.sxf -o clutter.geojson
@@ -17,7 +17,7 @@
              растительность — типовая по коду);
     name   — название объекта из классификатора RSC.
 
-Интеграция аддитивная (ТЗ 9.3): существующие контракты profile/dem/budget
+Интеграция аддитивная: существующие контракты profile/dem/budget
 не изменяются — geojson подключается как источник heights в профиле.
 """
 from __future__ import annotations
@@ -193,7 +193,7 @@ def main() -> None:
         candidate = sxf_path.with_suffix(".rsc")
         if candidate.exists():
             rsc_path = candidate
-    # ТЗ 5.3: имена .sxf и .rsc должны совпадать (или задаваться SXF_RSC_FILENAME)
+    #: имена .sxf и .rsc должны совпадать (или задаваться SXF_RSC_FILENAME)
     if rsc_path and rsc_path.stem != sxf_path.stem and not rsc_env and not args.rsc:
         print(f"  ! Имена .sxf ({sxf_path.stem}) и .rsc ({rsc_path.stem}) не совпадают — проверьте классификатор", file=sys.stderr)
 

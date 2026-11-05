@@ -23,7 +23,7 @@ export const MODULATIONS: Record<ModulationId, { ebN0Db: number; bitsPerSymbol: 
   '64QAM': { ebN0Db: 18.5, bitsPerSymbol: 6, label: '64-QAM' },
 }
 
-/** Ограничения по ТЗ */
+/** Ограничения входных данных */
 export const LIMITS = {
   frequencyMinMhz: 500,
   frequencyMaxMhz: 7000,
@@ -33,7 +33,7 @@ export const LIMITS = {
   ituMapMaxZipBytes: 1024 * 1024 * 1024, // 1 ГБ на zip
 }
 
-/** Порог FPS для анимации траектории (ТЗ 4.5.3, 9.3) */
+/** Порог FPS для анимации траектории*/
 export const FPS_THRESHOLD = 24
 
 /** kTB при 290 K, дБм: 10*log10(k*T0*1e3) ≈ -173.98 */

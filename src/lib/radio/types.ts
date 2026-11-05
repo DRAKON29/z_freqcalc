@@ -1,6 +1,5 @@
 /**
  * Общие типы калькулятора распространения радиоволн.
- * Соответствуют ТЗ v1.0 (разделы 3.1, 4.1–4.9).
  */
 
 export type Polarization = 'vertical' | 'horizontal' | 'circular'
@@ -24,7 +23,7 @@ export interface Sk42 {
   y: number // восток с ведущей цифрой зоны (м)
 }
 
-/** Антенна: упрощённый и подробный режим (ТЗ 4.4). */
+/** Антенна: упрощённый и подробный режим. */
 export interface AntennaParams {
   gainDbi: number
   /** Подробный режим */
@@ -50,7 +49,7 @@ export interface TransceiverParams {
   requiredEbN0Db?: number
 }
 
-/** Атмосферные и дополнительные потери (ТЗ 4.7). */
+/** Атмосферные и дополнительные потери. */
 export interface AtmosphereParams {
   /** Интенсивность дождя 0.01%, мм/ч (P.837) */
   rainRateMmH?: number
@@ -146,7 +145,7 @@ export interface PropagationResult {
   warnings: string[]
 }
 
-/** Строка бюджета линии (ТЗ 4.4.4). */
+/** Строка бюджета линии. */
 export interface BudgetRow {
   label: string
   value: number
@@ -164,7 +163,7 @@ export interface LinkBudget {
   snrDb: number
   ebN0ActualDb: number
   ebN0RequiredDb: number
-  /** Link margin = SNR − Eb/N0_req (формула ТЗ) */
+  /** Link margin = SNR − Eb/N0_req */
   linkMarginDb: number
   income: BudgetRow[]
   expense: BudgetRow[]
@@ -172,7 +171,7 @@ export interface LinkBudget {
   dopplerLossDb?: number
 }
 
-/** Возможности модели (ТЗ 3.1: getCapabilities). */
+/** Возможности модели (getCapabilities). */
 export interface ModelCapabilities {
   model: ModelId
   supportsTimePercent: boolean
@@ -183,13 +182,13 @@ export interface ModelCapabilities {
   description: string
 }
 
-/** Интерфейс модели распространения (ТЗ 3.1). */
+/** Интерфейс модели распространения. */
 export interface PropagationModel {
   calculate(input: CalculationInput): Promise<PropagationResult>
   getCapabilities(): ModelCapabilities
 }
 
-/** Параметры летающего объекта (ТЗ 4.5.1). */
+/** Параметры летающего объекта. */
 export interface DynamicParams {
   /** Высота полёта, м */
   altitudeM: number
@@ -226,9 +225,20 @@ export interface DynamicsResult {
   minMarginDb: number
   exitTimeS: number | null
   warnings: string[]
+  /** Высота полёта, для которой выполнен расчёт (многовысотный режим) */
+  altitudeM?: number
 }
 
-/** История расчётов (ТЗ 4.9). */
+/** Результат расчёта на одной частоте (режим «диапазон частот»). */
+export interface RangeFreqResult {
+  frequencyMhz: number
+  medianLossDb: number
+  linkMarginDb: number
+  prxDbm: number
+  snrDb: number
+}
+
+/** История расчётов. */
 export interface HistoryEntry {
   id?: number
   deviceId: string

@@ -1,11 +1,11 @@
 'use client'
 
 /**
- * Результаты — ТЗ 4.4.4, 4.8, 4.9:
+ * Результаты:
  * бюджет линии (таблица приход/расход + предупреждение при margin < 0),
  * профиль трассы (рельеф, LOS, зона Френеля, препятствия),
- * график потерь vs процент времени (P.2001), вклад механизмов,
- * экспорт JSON/CSV.
+ * график потерь vs процент времени (P.2001), сводка по диапазону частот,
+ * вклад механизмов, экспорт JSON/CSV.
  */
 import { useMemo } from 'react'
 import { useRadioStore } from '@/store/radio-store'
@@ -34,7 +34,7 @@ import { AlertTriangle, Download, FileJson, FileSpreadsheet } from 'lucide-react
 
 export function ResultsPanel() {
   const s = useRadioStore()
-  const { result, budget, lastInput } = s
+  const { result, budget, lastInput, rangeResults, terrainWarning } = s
 
   const profileData = useMemo(() => {
     if (!lastInput) return []
@@ -84,6 +84,12 @@ export function ResultsPanel() {
     )
   }
 
+  const rangeData = (rangeResults ?? []).map((r) => ({
+    f: r.frequencyMhz,
+    loss: +r.medianLossDb.toFixed(1),
+    margin: +r.linkMarginDb.toFixed(1),
+  }))
+
   const doExportJson = () => {
     const payload = buildExportPayload(lastInput!, result, budget, s.dynamics ?? undefined)
     download(`расчёт-${new Date().toISOString().slice(0, 19)}.json`, toJson(payload), 'application/json')
@@ -97,7 +103,15 @@ export function ResultsPanel() {
 
   return (
     <div className="space-y-4">
-      {/* Предупреждения fallback (ТЗ 4.2.3) */}
+      {/* Предупреждение о покрытии рельефа */}
+      {terrainWarning && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3 flex items-start gap-2">
+          <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <p className="text-sm text-amber-800 dark:text-amber-300">{terrainWarning}</p>
+        </div>
+      )}
+
+      {/* Предупреждения fallback */}
       {result.warnings.length > 0 && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-1">
           {result.warnings.map((w, i) => (
@@ -124,13 +138,13 @@ export function ResultsPanel() {
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">SNR</p>
+            <p className="text-xs text-muted-foreground">Отношение сигнал/шум (SNR)</p>
             <p className="text-2xl font-semibold">{budget.snrDb.toFixed(1)} <span className="text-sm">дБ</span></p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">Link margin</p>
+            <p className="text-xs text-muted-foreground">Запас на линию (link margin)</p>
             <p className={`text-2xl font-semibold ${budget.linkMarginDb < 0 ? 'text-destructive' : 'text-emerald-600'}`}>
               {budget.linkMarginDb.toFixed(1)} <span className="text-sm">дБ</span>
             </p>
@@ -142,7 +156,7 @@ export function ResultsPanel() {
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 flex items-center gap-2">
           <AlertTriangle className="h-5 w-5 text-destructive" />
           <p className="text-sm text-destructive font-medium">
-            Link margin &lt; 0: линия связи не обеспечивается (SNR ниже требуемого Eb/N₀ на {Math.abs(budget.linkMarginDb).toFixed(1)} дБ).
+            Запас на линию (link margin) &lt; 0: линия связи не обеспечивается (SNR ниже требуемого Eb/N₀ на {Math.abs(budget.linkMarginDb).toFixed(1)} дБ).
           </p>
         </div>
       )}
@@ -151,7 +165,7 @@ export function ResultsPanel() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center justify-between">
-            Бюджет линии (ТЗ 4.4.4)
+            Бюджет линии (Link Budget)
             <Badge variant="outline" className="font-mono">{result.engineUsed}</Badge>
           </CardTitle>
         </CardHeader>
@@ -228,16 +242,69 @@ export function ResultsPanel() {
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Area type="monotone" dataKey="рельеф" stackId="t" stroke="#57534e" fill="#a8a29e" fillOpacity={0.9} isAnimationActive={false} />
                 <Area type="monotone" dataKey="препятствие" stackId="t" stroke="#78350f" fill="#d97706" fillOpacity={0.8} isAnimationActive={false} name="Здания/растительность" />
-                <Line type="monotone" dataKey="френель" stroke="#0891b2" strokeDasharray="4 4" dot={false} strokeWidth={1} name="Зона Френеля F1" isAnimationActive={false} />
-                <Line type="monotone" dataKey="LOS" stroke="#dc2626" dot={false} strokeWidth={2} name="Прямая видимость" isAnimationActive={false} />
+                <Line type="monotone" dataKey="френель" stroke="#0891b2" strokeDasharray="4 4" dot={false} strokeWidth={1} name="Зона Френеля (Fresnel) F1" isAnimationActive={false} />
+                <Line type="monotone" dataKey="LOS" stroke="#dc2626" dot={false} strokeWidth={2} name="Прямая видимость (LOS)" isAnimationActive={false} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            Высоты показаны с учётом кривизны Земли (k = {s.kFactor.toFixed(2)}). Препятствия — здания/растительность из clutter.geojson.
+            Высоты показаны с учётом кривизны Земли (k = {s.kFactor.toFixed(2)}). Препятствия — здания/растительность из данных clutter.
           </p>
         </CardContent>
       </Card>
+
+      {/* Сводка по диапазону частот */}
+      {rangeResults && rangeResults.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              Диапазон частот: {rangeResults[0].frequencyMhz.toFixed(1)}–{rangeResults[rangeResults.length - 1].frequencyMhz.toFixed(1)} МГц
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 lg:grid-cols-2">
+            <div className="h-[240px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={rangeData} margin={{ top: 5, right: 10, bottom: 16, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                  <XAxis dataKey="f" tick={{ fontSize: 11 }} label={{ value: 'МГц', position: 'insideBottom', offset: -8, fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    formatter={(value: number, name: string) => [`${value} дБ`, name === 'loss' ? 'Потери' : 'Запас']}
+                    labelFormatter={(l) => `${l} МГц`}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} formatter={(v) => (v === 'loss' ? 'Потери' : 'Запас (link margin)')} />
+                  <Line type="monotone" dataKey="loss" stroke="#0f766e" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="margin" stroke="#dc2626" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-right">Частота, МГц</TableHead>
+                  <TableHead className="text-right">Потери, дБ</TableHead>
+                  <TableHead className="text-right">P_rx, дБм</TableHead>
+                  <TableHead className="text-right">SNR, дБ</TableHead>
+                  <TableHead className="text-right">Запас, дБ</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rangeResults.map((r) => (
+                  <TableRow key={r.frequencyMhz}>
+                    <TableCell className="text-right font-mono">{r.frequencyMhz.toFixed(1)}</TableCell>
+                    <TableCell className="text-right font-mono">{r.medianLossDb.toFixed(1)}</TableCell>
+                    <TableCell className="text-right font-mono">{r.prxDbm.toFixed(1)}</TableCell>
+                    <TableCell className="text-right font-mono">{r.snrDb.toFixed(1)}</TableCell>
+                    <TableCell className={`text-right font-mono ${r.linkMarginDb < 0 ? 'text-destructive' : ''}`}>
+                      {r.linkMarginDb.toFixed(1)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Потери vs % времени (P.2001) */}

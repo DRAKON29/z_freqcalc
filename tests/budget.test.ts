@@ -1,4 +1,4 @@
-/** Тесты бюджета линии (ТЗ 4.4.4) и доплера (ТЗ 4.5.2). */
+/** Тесты бюджета линии и доплера. */
 import { describe, it, expect } from 'bun:test'
 import { computeLinkBudget } from '../src/lib/radio/budget'
 import { dopplerLossDb, dopplerToleranceHz, zoneRadiusM } from '../src/lib/radio/doppler'
@@ -47,7 +47,7 @@ const equipmentSimple: EquipmentParams = {
   receiver: { powerDbm: 0, sensitivityDbm: -100, noiseBandwidthHz: 1e6, noiseFigureDb: 5, modulation: 'QPSK', requiredEbN0Db: 9.6 },
 }
 
-describe('Бюджет линии (ТЗ 4.4.4)', () => {
+describe('Бюджет линии', () => {
   it('EIRP = P_tx + G_tx', () => {
     const b = computeLinkBudget(input, equipmentSimple, prop)
     expect(b.eirpDbm).toBe(40)
@@ -96,7 +96,7 @@ describe('Бюджет линии (ТЗ 4.4.4)', () => {
   })
 })
 
-describe('Доплер (ТЗ 4.5.2)', () => {
+describe('Доплер', () => {
   it('Δf = (v_r / c) · f: 100 м/с на 1 ГГц → 333.6 Гц', () => {
     const df = (100 / 299_792_458) * 1e9
     expect(df).toBeCloseTo(333.56, 0)

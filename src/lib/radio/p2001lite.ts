@@ -1,11 +1,11 @@
 /**
  * Локальный движок расчёта (TypeScript):
- *  • «FSPL + P.526» — детерминированная модель (ТЗ 4.2.2);
- *  • «P.2001-lite» — упрощённая статистическая модель (ТЗ 4.2.1): медиана,
+ * • «FSPL + P.526» — детерминированная модель;
+ * • «P.2001-lite» — упрощённая статистическая модель: медиана,
  *    изменчивость во времени (многолучёвость + тропосферное рассеяние).
  *
  * P.2001-lite используется как WASM/браузерный режим P.2001 при недоступности
- * Pyodide/карт ITU с явным предупреждением (ТЗ 9.3: fallback на FSPL + P.526
+ * Pyodide/карт ITU с явным предупреждением ( fallback на FSPL + P.526
  * запрещает «молчаливую» подмену — причина фиксируется в warnings).
  */
 import { diffractionLossDb } from './diffraction'
@@ -90,7 +90,7 @@ export function clutterLosses(
   const step = input.path.profile.length > 1 ? input.path.profile[1].d - input.path.profile[0].d : 0
   for (const p of input.path.profile) {
     if (p.clutter <= 0) continue
-    if (p.d <= 0 || p.d >= input.path.distanceM) continue // точки антенн не учитываем (ТЗ 4.6)
+  if (p.d <= 0 || p.d >= input.path.distanceM) continue // точки антенн не учитываем
     hasBuilding = true
     // считаем глубину растительности: height > 3 м и тип неизвестен → как vegetation-полоса
     if (p.clutter > 0) vegDepth += step
@@ -114,7 +114,7 @@ export function clutterLosses(
   return { diffractionDb, vegetationDb, hasBuilding, hasVegetation }
 }
 
-/** Полный расчёт «FSPL + P.526» (ТЗ 4.2.2). */
+/** Полный расчёт «FSPL + P.526». */
 export function computeFsplP526(input: CalculationInput): PropagationResult {
   const warnings: string[] = []
   const freq = input.frequencyMhz

@@ -1,8 +1,8 @@
 'use client'
 
 /**
- * История расчётов — ТЗ 4.9: IndexedDB (офлайн) + синхронизация с сервером,
- * анонимный device_id, фильтры, экспорт JSON/CSV, загрузка записи.
+ * История расчётов: IndexedDB (офлайн) + синхронизация с сервером,
+ * анонимный device_id, фильтры, экспорт JSON/CSV/PDF, загрузка записи.
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useRadioStore } from '@/store/radio-store'
@@ -16,8 +16,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { getDeviceId, listHistory, clearHistory, syncPending, fetchServerHistory } from '@/lib/radio/history'
 import { download, toJson, historyToCsv } from '@/lib/radio/export'
+import { historyEntriesToPdfBlob } from '@/lib/radio/pdf'
 import type { HistoryEntry } from '@/lib/radio/types'
-import { History, RefreshCw, Trash2, FileJson, FileSpreadsheet, CloudUpload } from 'lucide-react'
+import { History, RefreshCw, Trash2, FileJson, FileSpreadsheet, FileText, CloudUpload } from 'lucide-react'
 
 export function HistoryPanel() {
   const [entries, setEntries] = useState<HistoryEntry[]>([])
@@ -27,6 +28,8 @@ export function HistoryPanel() {
   const [dateFrom, setDateFrom] = useState('')
   const [syncInfo, setSyncInfo] = useState<string | null>(null)
   const [deviceId, setDeviceId] = useState('')
+  const [pdfBusy, setPdfBusy] = useState(false)
+  const [pdfError, setPdfError] = useState<string | null>(null)
   const calculate = useRadioStore((s) => s.calculate)
 
   useEffect(() => {
@@ -77,6 +80,29 @@ export function HistoryPanel() {
     s.setField('climateZone', inp.climateZone)
     s.setAtmosphere(inp.atmosphere)
     void calculate()
+  }
+
+  /** Экспорт записей в PDF: по листу на расчёт. */
+  const exportPdf = async (entries: HistoryEntry[], single?: boolean) => {
+    if (entries.length === 0) return
+    setPdfBusy(true)
+    setPdfError(null)
+    try {
+      const blob = await historyEntriesToPdfBlob(entries)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')
+      a.href = url
+      a.download = single
+        ? `расчёт-${entries[0].createdAt.slice(0, 19).replace(/[T:]/g, '-')}.pdf`
+        : `история-расчётов-${stamp}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setPdfError(`Не удалось сформировать PDF: ${err instanceof Error ? err.message : err}`)
+    } finally {
+      setPdfBusy(false)
+    }
   }
 
   return (
@@ -135,10 +161,10 @@ export function HistoryPanel() {
                   <TableHead>Дата</TableHead>
                   <TableHead>Название</TableHead>
                   <TableHead>Модель</TableHead>
-                  <TableHead className="text-right">Частота</TableHead>
-                  <TableHead className="text-right">Длина</TableHead>
-                  <TableHead className="text-right">Потери</TableHead>
-                  <TableHead className="text-right">Запас</TableHead>
+                  <TableHead className="text-right">Частота, МГц</TableHead>
+                  <TableHead className="text-right">Длина, км</TableHead>
+                  <TableHead className="text-right">Потери, дБ</TableHead>
+                  <TableHead className="text-right">Запас, дБ</TableHead>
                   <TableHead>Синхр.</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
@@ -179,6 +205,15 @@ export function HistoryPanel() {
                         <Button
                           size="sm"
                           variant="ghost"
+                          title="Экспорт PDF (лист на расчёт)"
+                          onClick={() => void exportPdf([e], true)}
+                          disabled={pdfBusy}
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
                           title="Удалить запись"
                           onClick={() => {
                             void clearHistory(deviceId).then(refresh)
@@ -200,14 +235,18 @@ export function HistoryPanel() {
               variant="outline"
               onClick={() => download('история-расчётов.json', toJson({ entries: filtered }), 'application/json')}
             >
-              <FileJson className="h-4 w-4 mr-1" /> Экспорт истории JSON
+              <FileJson className="h-4 w-4 mr-1" /> Экспорт JSON
             </Button>
             <Button
               size="sm"
               variant="outline"
               onClick={() => download('история-расчётов.csv', historyToCsv(filtered), 'text/csv')}
             >
-              <FileSpreadsheet className="h-4 w-4 mr-1" /> Экспорт истории CSV
+              <FileSpreadsheet className="h-4 w-4 mr-1" /> Экспорт CSV
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => void exportPdf(filtered)} disabled={pdfBusy || filtered.length === 0}>
+              <FileText className="h-4 w-4 mr-1" />
+              {pdfBusy ? 'Формирование PDF…' : 'Экспорт PDF'}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => void clearHistory(deviceId).then(refresh)}>
               <Trash2 className="h-4 w-4 mr-1" /> Очистить историю
@@ -216,8 +255,14 @@ export function HistoryPanel() {
               <p className="text-xs text-muted-foreground self-center">На сервере: {serverEntries.length} записей</p>
             )}
           </div>
+          {pdfError && <p className="text-xs text-destructive">{pdfError}</p>}
           <p className="text-xs text-muted-foreground">
-            При недоступности сервера история ведётся только в IndexedDB (fallback по ТЗ 4.9). Авторизация не требуется —
+            Экспорт PDF: каждый лист содержит основные данные расчёта — частоту, координаты приёмника и передатчика,
+            длину трассы, профиль рельефа с основными линиями (рельеф, прямая видимость, зона Френеля)
+            и данные по радиосвязи (бюджет линии).
+          </p>
+          <p className="text-xs text-muted-foreground">
+            При недоступности сервера история ведётся только в IndexedDB (офлайн-fallback). Авторизация не требуется —
             привязка к анонимному device_id.
           </p>
         </CardContent>

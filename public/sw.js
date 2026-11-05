@@ -1,5 +1,5 @@
 /**
- * Service Worker — ТЗ 4.10:
+ * Service Worker:
  *  • precache HTML/CSS/JS/иконки (оболочка приложения);
  *  • runtime cache /api/* — stale-while-revalidate, TTL 1 ч;
  *  • офлайн-fallback: кэшированная оболочка (включая /py/p2001_lite.py для Pyodide-модели).
@@ -51,7 +51,7 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // /api/*: stale-while-revalidate с TTL 1 ч (ТЗ 4.10)
+  // /api/*: stale-while-revalidate с TTL 1 ч
   if (url.pathname.includes('/api/')) {
     event.respondWith(
       caches.open(CACHE).then(async (cache) => {

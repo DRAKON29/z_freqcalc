@@ -1,10 +1,11 @@
 'use client'
 
 /**
- * Параметры антенн и приёмопередатчиков — ТЗ 4.4:
- * переключатель «Упрощённо / Подробно», полный набор полей подробного режима.
- * Выбор модели и бэкенда — ТЗ 4.2.3.
+ * Параметры антенн и приёмопередатчиков:
+ * переключатель «Упрощённо / Подробно», мощность передатчика в дБм или мВт,
+ * полный набор полей подробного режима. Выбор модели и бэкенда расчёта.
  */
+import { useState } from 'react'
 import { useRadioStore } from '@/store/radio-store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -15,7 +16,12 @@ import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { MODULATIONS } from '@/lib/radio/constants'
 import type { ModulationId } from '@/lib/radio/types'
-import { SlidersHorizontal, Server } from 'lucide-react'
+import { SlidersHorizontal } from 'lucide-react'
+
+type PowerUnit = 'dbm' | 'mw'
+
+const dbmToMw = (dbm: number): number => Math.pow(10, dbm / 10)
+const mwToDbm = (mw: number): number => 10 * Math.log10(Math.max(mw, Number.MIN_VALUE))
 
 function NumField({
   label,
@@ -49,8 +55,10 @@ export function EquipmentPanel() {
   const setField = useRadioStore((s) => s.setField)
   const setBackend = useRadioStore((s) => s.setBackend)
   const checkBackend = useRadioStore((s) => s.checkBackend)
+  const [powerUnit, setPowerUnit] = useState<PowerUnit>('dbm')
 
   const detailed = eq.mode === 'detailed'
+  const txPowerDbm = eq.transmitter.powerDbm
 
   return (
     <div className="space-y-4">
@@ -58,7 +66,7 @@ export function EquipmentPanel() {
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center justify-between">
             <span className="flex items-center gap-2">
-              <SlidersHorizontal className="h-4 w-4 text-emerald-600" /> Модель и бэкенд
+              <SlidersHorizontal className="h-4 w-4 text-emerald-600" /> Модель и бэкенд расчёта
             </span>
             <Badge
               variant={backendAvailable === false ? 'destructive' : 'secondary'}
@@ -89,7 +97,7 @@ export function EquipmentPanel() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="http">http — FastAPI-сервис</SelectItem>
+                  <SelectItem value="http">http — Python-сервис</SelectItem>
                   <SelectItem value="wasm">wasm — Pyodide в браузере</SelectItem>
                 </SelectContent>
               </Select>
@@ -103,7 +111,7 @@ export function EquipmentPanel() {
           <p className="text-xs text-muted-foreground">
             P.2001: дифракция, тропосферное рассеяние, замирания 0–100% времени, климатические зоны.
             В wasm-режиме P.2001 выполняется в браузере (Pyodide), при его недоступности — fallback на FSPL + P.526
-            с предупреждением.
+            (потери в свободном пространстве + коррекция дифракции) с предупреждением.
           </p>
         </CardContent>
       </Card>
@@ -127,7 +135,7 @@ export function EquipmentPanel() {
           <div className="grid gap-4 md:grid-cols-2">
             {/* Антенна Tx */}
             <div className="space-y-3 rounded-lg border p-3">
-              <p className="text-sm font-semibold text-emerald-700">Антенна Tx</p>
+              <p className="text-sm font-semibold text-emerald-700">Антенна Tx (передатчик)</p>
               <div className="grid grid-cols-2 gap-2">
                 <NumField label="Усиление, дБи" value={eq.tx.gainDbi} onChange={(v) => setEquipment({ tx: { ...eq.tx, gainDbi: v } })} />
                 <div>
@@ -151,7 +159,7 @@ export function EquipmentPanel() {
                     <NumField label="Ширина луча, °" value={eq.tx.beamwidthDeg ?? 30} onChange={(v) => setEquipment({ tx: { ...eq.tx, beamwidthDeg: v } })} />
                     <NumField label="Ур. боковых лепестков, дБ" value={eq.tx.sidelobeDb ?? -25} onChange={(v) => setEquipment({ tx: { ...eq.tx, sidelobeDb: v } })} />
                     <NumField label="Рассогласование, дБ" value={eq.tx.mismatchLossDb ?? 0.5} onChange={(v) => setEquipment({ tx: { ...eq.tx, mismatchLossDb: v } })} />
-                    <NumField label="КСВН" value={eq.tx.vswr ?? 1.5} onChange={(v) => setEquipment({ tx: { ...eq.tx, vswr: v } })} />
+                    <NumField label="КСВН (VSWR)" value={eq.tx.vswr ?? 1.5} onChange={(v) => setEquipment({ tx: { ...eq.tx, vswr: v } })} />
                     <NumField label="Потери фидера, дБ" value={eq.tx.feederLossDb ?? 1.5} onChange={(v) => setEquipment({ tx: { ...eq.tx, feederLossDb: v } })} />
                     <NumField label="Азимут, °" value={eq.tx.azimuthDeg ?? 0} onChange={(v) => setEquipment({ tx: { ...eq.tx, azimuthDeg: v } })} step={1} />
                   </>
@@ -161,7 +169,7 @@ export function EquipmentPanel() {
 
             {/* Антенна Rx */}
             <div className="space-y-3 rounded-lg border p-3">
-              <p className="text-sm font-semibold text-amber-700">Антенна Rx</p>
+              <p className="text-sm font-semibold text-amber-700">Антенна Rx (приёмник)</p>
               <div className="grid grid-cols-2 gap-2">
                 <NumField label="Усиление, дБи" value={eq.rx.gainDbi} onChange={(v) => setEquipment({ rx: { ...eq.rx, gainDbi: v } })} />
                 <div>
@@ -185,7 +193,7 @@ export function EquipmentPanel() {
                     <NumField label="Ширина луча, °" value={eq.rx.beamwidthDeg ?? 30} onChange={(v) => setEquipment({ rx: { ...eq.rx, beamwidthDeg: v } })} />
                     <NumField label="Ур. боковых лепестков, дБ" value={eq.rx.sidelobeDb ?? -25} onChange={(v) => setEquipment({ rx: { ...eq.rx, sidelobeDb: v } })} />
                     <NumField label="Рассогласование, дБ" value={eq.rx.mismatchLossDb ?? 0.5} onChange={(v) => setEquipment({ rx: { ...eq.rx, mismatchLossDb: v } })} />
-                    <NumField label="КСВН" value={eq.rx.vswr ?? 1.5} onChange={(v) => setEquipment({ rx: { ...eq.rx, vswr: v } })} />
+                    <NumField label="КСВН (VSWR)" value={eq.rx.vswr ?? 1.5} onChange={(v) => setEquipment({ rx: { ...eq.rx, vswr: v } })} />
                     <NumField label="Потери фидера, дБ" value={eq.rx.feederLossDb ?? 1.5} onChange={(v) => setEquipment({ rx: { ...eq.rx, feederLossDb: v } })} />
                     <NumField label="Азимут, °" value={eq.rx.azimuthDeg ?? 0} onChange={(v) => setEquipment({ rx: { ...eq.rx, azimuthDeg: v } })} step={1} />
                   </>
@@ -195,11 +203,43 @@ export function EquipmentPanel() {
 
             {/* Передатчик */}
             <div className="space-y-3 rounded-lg border p-3">
-              <p className="text-sm font-semibold">Передатчик</p>
-              <div className="grid grid-cols-2 gap-2">
-                <NumField label="Мощность, дБм" value={eq.transmitter.powerDbm} onChange={(v) => setEquipment({ transmitter: { ...eq.transmitter, powerDbm: v } })} step={1} />
-                <NumField label="Чувствительность, дБм" value={eq.transmitter.sensitivityDbm} onChange={(v) => setEquipment({ transmitter: { ...eq.transmitter, sensitivityDbm: v } })} step={1} />
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">Передатчик</p>
+                {/* Переключатель единиц мощности */}
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className={powerUnit === 'dbm' ? 'font-medium' : 'text-muted-foreground'}>дБм (dBm)</span>
+                  <Switch
+                    checked={powerUnit === 'mw'}
+                    onCheckedChange={(v) => setPowerUnit(v ? 'mw' : 'dbm')}
+                    aria-label="Переключатель единиц мощности"
+                  />
+                  <span className={powerUnit === 'mw' ? 'font-medium' : 'text-muted-foreground'}>мВт (mW)</span>
+                </div>
               </div>
+              <div className="grid grid-cols-2 gap-2">
+                {powerUnit === 'dbm' ? (
+                  <NumField
+                    label="Мощность, дБм (dBm)"
+                    value={txPowerDbm}
+                    onChange={(v) => setEquipment({ transmitter: { ...eq.transmitter, powerDbm: v } })}
+                    step={1}
+                  />
+                ) : (
+                  <NumField
+                    label="Мощность, мВт (mW)"
+                    value={+dbmToMw(txPowerDbm).toFixed(2)}
+                    onChange={(v) => setEquipment({ transmitter: { ...eq.transmitter, powerDbm: +mwToDbm(v).toFixed(2) } })}
+                    step={10}
+                    min={0}
+                  />
+                )}
+                <NumField label="Чувствительность, дБм (dBm)" value={eq.transmitter.sensitivityDbm} onChange={(v) => setEquipment({ transmitter: { ...eq.transmitter, sensitivityDbm: v } })} step={1} />
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {powerUnit === 'dbm'
+                  ? `≈ ${dbmToMw(txPowerDbm).toFixed(2)} мВт (mW)`
+                  : `≈ ${txPowerDbm.toFixed(2)} дБм (dBm)`}
+              </p>
             </div>
 
             {/* Приёмник */}
@@ -207,7 +247,7 @@ export function EquipmentPanel() {
               <p className="text-sm font-semibold">Приёмник</p>
               <div className="grid grid-cols-2 gap-2">
                 <NumField label="Мощность, дБм (Rx-часть)" value={eq.receiver.powerDbm} onChange={(v) => setEquipment({ receiver: { ...eq.receiver, powerDbm: v } })} step={1} />
-                <NumField label="Чувствительность, дБм" value={eq.receiver.sensitivityDbm} onChange={(v) => setEquipment({ receiver: { ...eq.receiver, sensitivityDbm: v } })} step={1} />
+                <NumField label="Чувствительность, дБм (dBm)" value={eq.receiver.sensitivityDbm} onChange={(v) => setEquipment({ receiver: { ...eq.receiver, sensitivityDbm: v } })} step={1} />
                 {detailed && (
                   <>
                     <NumField
@@ -217,7 +257,7 @@ export function EquipmentPanel() {
                       step={1e5}
                       min={100}
                     />
-                    <NumField label="NF, дБ" value={eq.receiver.noiseFigureDb ?? 3} onChange={(v) => setEquipment({ receiver: { ...eq.receiver, noiseFigureDb: v } })} />
+                    <NumField label="Коэффициент шума (NF), дБ" value={eq.receiver.noiseFigureDb ?? 3} onChange={(v) => setEquipment({ receiver: { ...eq.receiver, noiseFigureDb: v } })} />
                     <div>
                       <Label className="text-xs">Модуляция</Label>
                       <Select
@@ -258,8 +298,8 @@ export function EquipmentPanel() {
           <Separator />
           <p className="text-xs text-muted-foreground">
             В упрощённом режиме: усиления антенн, мощность передатчика и чувствительность приёмника.
-            В подробном добавляются ширина луча, боковые лепестки, рассогласование, КСВН, фидеры, полоса шума,
-            NF и модуляция.
+            В подробном добавляются ширина луча, боковые лепестки, рассогласование, КСВН (VSWR), фидеры,
+            полоса шума, коэффициент шума (NF) и модуляция.
           </p>
         </CardContent>
       </Card>

@@ -7,7 +7,7 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
 }
 
-/** Регистрация Service Worker (ТЗ 4.10). */
+/** Регистрация Service Worker. */
 export function PwaRegister() {
   useEffect(() => {
     if ('serviceWorker' in navigator) {
@@ -19,7 +19,7 @@ export function PwaRegister() {
   return null
 }
 
-/** Баннер «Установить приложение» (beforeinstallprompt, ТЗ 4.10). */
+/** Баннер «Установить приложение» (beforeinstallprompt). */
 export function InstallBanner() {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null)
   const [hidden, setHidden] = useState(false)

@@ -1,4 +1,4 @@
-/** Конфигурация доступа к Python-сервису (ТЗ 3.1, 6.3). */
+/** Конфигурация доступа к Python-сервису. */
 export function apiBase(): string {
   return process.env.NEXT_PUBLIC_API_BASE ?? '/api'
 }

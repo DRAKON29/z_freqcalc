@@ -3,14 +3,14 @@
 P.2001-lite — расчётное ядро распространения радиоволн на Python.
 
 Используется в двух режимах:
-  • FastAPI-сервис (http-режим, ТЗ 3.1): приоритетная модель ITU-R P.2001.
+  • FastAPI-сервис (http-режим,): приоритетная модель ITU-R P.2001.
     При установленном пакете py2001 и картах ITU вызывается py2001;
     иначе — статистическая аппроксимация P.2001-lite.
-  • Pyodide в браузере (wasm-режим, ТЗ 3.1/9.3): та же модель без зависимостей.
+  • Pyodide в браузере (wasm-режим,): та же модель без зависимостей.
 
 Формулы: FSPL (P.525), дифракция (P.526: ножевое ребро, Буллингтон, Дейгаут),
 дождь (P.838), газы (P.676, упрощённая), растительность (P.833, Вайсбергер),
-бюджет линии (ТЗ 4.4.4), доплер (ТЗ 4.5.2).
+бюджет линии, доплер.
 """
 from __future__ import annotations
 
@@ -129,7 +129,7 @@ def extract_edges(profile):
 
 
 def diffraction_loss_db(profile, tx_h, rx_h, f_mhz, k, clutter_edges=None):
-    """max(Дейгаут, Буллингтон) — ТЗ 4.2.2."""
+    """max(Дейгаут, Буллингтон)"""
     if len(profile) < 3:
         return 0.0
     d_total = profile[-1]["d"]
@@ -241,7 +241,7 @@ def calculate(inp: dict, engine_note: str = "py: P.2001-lite") -> dict:
         [{"d": p["d"], "elev": p["elev"]} for p in profile], tx_h, rx_h, f, k
     )
 
-    # Здания/растительность из clutter (ТЗ 4.6): точки антенн не учитываются
+    # Здания/растительность из clutter: точки антенн не учитываются
     building_edges = [
         {"d": p["d"], "h": p["elev"] + p["clutter"]}
         for p in profile
@@ -261,7 +261,7 @@ def calculate(inp: dict, engine_note: str = "py: P.2001-lite") -> dict:
     veg_depth = step * sum(1 for p in profile if p.get("clutter", 0) > 0 and 0 < p["d"] < d_m)
     veg_db = vegetation_loss_db(veg_depth, f) if atm.get("vegetation") else 0.0
 
-    # Дождь (P.837/P.838) — для частот > 3 ГГц (ТЗ 4.7)
+    # Дождь (P.837/P.838) — для частот > 3 ГГц
     rain_rate = float(atm.get("rainRateMmH") or 0)
     rain_db = rain_loss_db(d_m, rain_rate, f, pol) if f > 3000 and rain_rate > 0 else 0.0
 
@@ -317,7 +317,7 @@ def p2001_lite_calculate(json_input: str) -> str:
 
 
 def compute_budget(inp: dict, equipment: dict, prop: dict, doppler_loss_db: float = 0.0) -> dict:
-    """Бюджет линии по формулам ТЗ 4.4.4."""
+    """Бюджет линии по формулам"""
     detailed = equipment.get("mode") == "detailed"
     tx, rx = equipment["tx"], equipment["rx"]
     transmitter, receiver = equipment["transmitter"], equipment["receiver"]

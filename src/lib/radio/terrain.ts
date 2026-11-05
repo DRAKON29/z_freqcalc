@@ -1,5 +1,5 @@
 /**
- * Рельеф — ТЗ 4.3:
+ * Рельеф:
  *  • парсер SRTM .hgt (int16 BE, 1201×1201 или 3601×3601) с кэшем IndexedDB;
  *  • синтетический DEM для demo-режима (value-noise, детерминированный по seed);
  *  • профиль трассы с шагом, зависящим от разрешения DEM;
@@ -164,9 +164,59 @@ export function createHgtDem(tiles: HgtTile[]): DemSource {
   }
 }
 
+/** ---------- Границы тайлов и покрытие ---------- */
+
+/** Прямоугольник покрытия тайла: [юго-запад, северо-восток] в градусах. */
+export function tileBounds(tile: HgtTile): {
+  minLat: number
+  maxLat: number
+  minLon: number
+  maxLon: number
+} {
+  return {
+    minLat: tile.latOrigin,
+    maxLat: tile.latOrigin + 1,
+    minLon: tile.lonOrigin,
+    maxLon: tile.lonOrigin + 1,
+  }
+}
+
+/** Проверка точки на попадание в покрытие загруженных тайлов. */
+export function pointInTiles(lat: number, lon: number, tiles: HgtTile[]): boolean {
+  return tiles.some((t) => {
+    const b = tileBounds(t)
+    return lat >= b.minLat && lat <= b.maxLat && lon >= b.minLon && lon <= b.maxLon
+  })
+}
+
+/**
+ * Анализ покрытия трассы загруженными тайлами.
+ * Возвращает долю точек профиля, попавших в покрытие (0…1) и список интервалов вне покрытия.
+ */
+export function pathTileCoverage(
+  profile: ProfilePoint[],
+  points: LatLon[],
+  tiles: HgtTile[],
+): { insideRatio: number; outside: boolean } {
+  if (tiles.length === 0 || profile.length === 0) return { insideRatio: 1, outside: false }
+  // Профиль равномерен по d: сэмплируем точки вдоль линии A→Б
+  const a = points[0]
+  const b = points[points.length - 1]
+  const n = profile.length
+  let inside = 0
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1 || 1)
+    const lat = a.lat + (b.lat - a.lat) * t
+    const lon = a.lon + (b.lon - a.lon) * t
+    if (pointInTiles(lat, lon, tiles)) inside++
+  }
+  const insideRatio = inside / n
+  return { insideRatio, outside: insideRatio < 0.999 }
+}
+
 /** ---------- Профиль трассы ---------- */
 
-/** Построение профиля с шагом, зависящим от разрешения DEM (ТЗ 4.3). */
+/** Построение профиля с шагом, зависящим от разрешения DEM. */
 export function buildProfile(
   a: LatLon,
   b: LatLon,
@@ -252,7 +302,7 @@ export interface ClutterGeoJson {
   }>
 }
 
-/** Валидация clutter.geojson (ТЗ 4.6: поля type, height). */
+/** Валидация clutter.geojson (поля type, height). */
 export function validateClutter(json: unknown): { ok: boolean; error?: string; count?: number } {
   try {
     const gj = json as ClutterGeoJson

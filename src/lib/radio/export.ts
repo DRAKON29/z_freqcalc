@@ -1,4 +1,4 @@
-/** Экспорт результатов в JSON и CSV (ТЗ 4.9). */
+/** Экспорт результатов в JSON и CSV. */
 import type { CalculationInput, DynamicsResult, HistoryEntry, LinkBudget, PropagationResult } from './types'
 
 export function buildExportPayload(

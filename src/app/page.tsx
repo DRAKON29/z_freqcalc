@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Калькулятор распространения радиоволн (ТЗ v1.0).
+ * Калькулятор распространения радиоволн.
  * Одностраничное приложение с вкладками: Расчёт, Динамика, История, Карты.
  */
 import dynamic from 'next/dynamic'
@@ -59,7 +59,7 @@ export default function Home() {
             <Badge
               variant={backendAvailable === false ? 'destructive' : 'secondary'}
               className="font-mono text-xs"
-              title="Индикатор активного бэкенда (ТЗ 4.2.3)"
+              title="Индикатор активного бэкенда расчёта"
             >
               {backend === 'http' ? `http${backendAvailable === false ? ' · офлайн' : ''}` : 'wasm · Pyodide'}
             </Badge>
@@ -120,7 +120,7 @@ export default function Home() {
       <footer className="mt-auto border-t bg-card">
         <div className="mx-auto max-w-7xl px-4 py-3 text-xs text-muted-foreground flex flex-wrap items-center justify-between gap-2">
           <p>ITU-R P.2001/P.525/P.526/P.537·P.838/P.676/P.833 · СК-42 (Гаусс–Крюгер) · Copernicus GLO-30 / SRTM</p>
-          <p>Веб-приложение по ТЗ v1.0 · офлайн-режим PWA</p>
+          <p>Веб-приложение · офлайн-режим PWA</p>
         </div>
       </footer>
     </div>

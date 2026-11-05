@@ -1,5 +1,5 @@
 /**
- * Динамические (летающие) объекты — ТЗ 4.5:
+ * Динамические (летающие) объекты:
  *  • прямолинейная траектория с постоянной скоростью;
  *  • изменение углов места/азимута во времени;
  *  • доплеровский сдвиг Δf = (v_r / c) · f;
@@ -62,7 +62,7 @@ export function simulateDynamics(
   const warnings: string[] = []
 
   if (params.speedKmh < 100 || params.speedKmh > 200) {
-    warnings.push(`Путевая скорость ${params.speedKmh} км/ч вне диапазона 100–200 (ТЗ 4.5.1)`)
+    warnings.push(`Путевая скорость ${params.speedKmh} км/ч вне диапазона 100–200 км/ч`)
   }
 
   const nSteps = Math.min(600, Math.max(60, params.durationS))

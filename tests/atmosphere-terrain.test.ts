@@ -12,7 +12,7 @@ describe('Дождь (P.837 + P.838)', () => {
     expect(g1).toBeGreaterThan(0)
     expect(g2).toBeGreaterThan(g1)
   })
-  it('учитывается только выше 3 ГГц (ТЗ 4.7)', () => {
+  it('учитывается только выше 3 ГГц', () => {
     expect(rainLossDb(20_000, 42, 1500, 'vertical')).toBeGreaterThan(0)
   })
   it('при R=42 мм/ч на 6 ГГц γ в разумных пределах (0.01–0.2 дБ/км)', () => {
@@ -102,7 +102,7 @@ describe('Синтетический DEM', () => {
   })
 })
 
-describe('Clutter GeoJSON (ТЗ 4.6)', () => {
+describe('Clutter GeoJSON', () => {
   const gj = {
     type: 'FeatureCollection' as const,
     features: [

@@ -1,9 +1,9 @@
 /**
- * WasmPropagationModel — запуск Python-модели в браузере через Pyodide (ТЗ 3.1, 4.2.1).
+ * WasmPropagationModel — запуск Python-модели в браузере через Pyodide.
  * Pyodide загружается лениво с CDN; код P.2001-lite берётся из /py/p2001_lite.py
  * (прекэшируется Service Worker'ом → работает офлайн).
  *
- * Fallback (ТЗ 9.3): при недоступности Pyodide — FSPL + P.526 локально,
+ * Fallback: при недоступности Pyodide — FSPL + P.526 локально,
  * причина возвращается в warnings.
  */
 import type { CalculationInput, ModelId, PropagationModel, PropagationResult, ModelCapabilities } from '../types'
@@ -52,7 +52,7 @@ export class WasmPropagationModel implements PropagationModel {
 
   async calculate(input: CalculationInput): Promise<PropagationResult> {
     if (this.modelId !== 'p2001') {
-      // «FSPL + P.526» в wasm-режиме считается локально (ТЗ 4.2.2)
+   // «FSPL + P.526» в wasm-режиме считается локально
       return computeFsplP526(input)
     }
     try {
@@ -66,7 +66,7 @@ export class WasmPropagationModel implements PropagationModel {
       }
     } catch (e) {
       const reason = e instanceof Error ? e.message : String(e)
-      // ТЗ 9.3: fallback на FSPL + P.526
+   // fallback на FSPL + P.526
       const local = computeFsplP526(input)
       return {
         ...local,

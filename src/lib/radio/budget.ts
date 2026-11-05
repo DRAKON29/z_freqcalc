@@ -1,5 +1,5 @@
 /**
- * Бюджет линии — формулы ТЗ 4.4.4:
+ * Бюджет линии — формулы
  *   EIRP = P_tx − L_feeder_tx + G_tx
  *   P_rx = EIRP − L_path + G_rx − L_feeder_rx
  *   N = kTB + NF
@@ -57,7 +57,7 @@ export function computeLinkBudget(
   const rbHz = bHz * bitsPerSymbol // упрощение: Rb = B · log2(M) при Nyquist-полосе
   const ebN0ActualDb = snrDb + 10 * Math.log10(bHz / rbHz)
 
-  // Link margin = SNR − Eb/N0_req (строго по формуле ТЗ)
+ // Link margin = SNR − Eb/N0_req
   const linkMarginDb = snrDb - ebN0Req
 
   const income: BudgetRow[] = [
@@ -65,7 +65,7 @@ export function computeLinkBudget(
     ...(txFeeder ? [{ label: 'Потери фидера Tx', value: -txFeeder, unit: 'дБ' as const, sign: '+' as const }] : []),
     ...(txMismatch ? [{ label: 'Рассогласование Tx', value: -txMismatch, unit: 'дБ' as const, sign: '+' as const }] : []),
     { label: 'Усиление антенны Tx (G_tx)', value: equipment.tx.gainDbi, unit: 'дБи', sign: '+' },
-    { label: 'EIRP', value: eirpDbm, unit: 'дБм', sign: '=' },
+    { label: 'ЭИИМ (EIRP)', value: eirpDbm, unit: 'дБм', sign: '=' },
     { label: 'Потери на трассе (L_path)', value: -prop.medianLossDb, unit: 'дБ', sign: '+' },
     ...(extra.dopplerLossDb ? [{ label: 'Деградация от доплера', value: -extra.dopplerLossDb, unit: 'дБ' as const, sign: '+' as const }] : []),
     { label: 'Усиление антенны Rx (G_rx)', value: equipment.rx.gainDbi, unit: 'дБи', sign: '+' },

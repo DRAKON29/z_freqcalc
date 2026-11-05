@@ -1,6 +1,6 @@
 /**
  * HttpPropagationModel — расчёт через Python (FastAPI) сервис.
- * ТЗ 3.1, 4.2.1: приоритетная модель ITU-R P.2001 (py2001 или P.2001-lite на сервере).
+ * приоритетная модель ITU-R P.2001 (py2001 или P.2001-lite на сервере).
  * При недоступности сервиса — fallback на локальную модель с предупреждением.
  */
 import type { CalculationInput, ModelId, PropagationModel, PropagationResult, ModelCapabilities } from '../types'
@@ -26,7 +26,7 @@ export class HttpPropagationModel implements PropagationModel {
       const prop = data.propagation ?? data
       return { ...prop, model: this.modelId }
     } catch (e) {
-      // Fallback (ТЗ 4.2.3: предупреждение при fallback с объяснением причины)
+   // Fallback
       const reason = e instanceof Error ? e.message : String(e)
       const local = this.modelId === 'p2001' ? computeP2001Lite(input) : computeFsplP526(input)
       return {

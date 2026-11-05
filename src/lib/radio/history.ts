@@ -1,19 +1,21 @@
 /**
- * История расчётов — ТЗ 4.9:
+ * История расчётов:
  *  • IndexedDB (локально, офлайн);
  *  • синхронизация с Python-сервисом (http-режим);
  *  • привязка к анонимному device_id (без авторизации);
- *  • fallback: только IndexedDB при недоступности сервера.
+ *  • fallback: только IndexedDB при недоступности сервера;
+ *  • кэш: тайлы SRTM, карты ITU, конвертированные SXF/RSC (clutter).
  */
 import type { HistoryEntry } from './types'
 import { apiUrl } from './models/api'
 
 const DB_NAME = 'radio-propagation'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 export const STORE_HISTORY = 'history'
 export const STORE_SRTM = 'srtm'
 export const STORE_ITU_MAPS = 'itu_maps'
+export const STORE_CLUTTER = 'clutter'
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
@@ -34,6 +36,9 @@ function openDb(): Promise<IDBDatabase> {
         if (!db.objectStoreNames.contains(STORE_ITU_MAPS)) {
           db.createObjectStore(STORE_ITU_MAPS, { keyPath: 'name' })
         }
+        if (!db.objectStoreNames.contains(STORE_CLUTTER)) {
+          db.createObjectStore(STORE_CLUTTER, { keyPath: 'key' })
+        }
       }
       req.onsuccess = () => resolve(req.result)
       req.onerror = () => reject(req.error)
@@ -52,7 +57,7 @@ async function tx<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectS
   })
 }
 
-/** Анонимный device_id (localStorage, ТЗ 3.4). */
+/** Анонимный device_id (localStorage). */
 export function getDeviceId(): string {
   if (typeof window === 'undefined') return 'server'
   let id = localStorage.getItem('radio_device_id')
@@ -143,7 +148,7 @@ export async function fetchServerHistory(deviceId: string): Promise<HistoryEntry
   }
 }
 
-/** Кэш тайлов SRTM в IndexedDB (ТЗ 5.2). */
+/** Кэш тайлов SRTM в IndexedDB. */
 export async function putSrtmTile(name: string, buffer: ArrayBuffer): Promise<void> {
   await tx(STORE_SRTM, 'readwrite', (s) => s.put({ name, buffer }) as unknown as IDBRequest<IDBValidKey>)
 }
@@ -158,7 +163,7 @@ export async function getSrtmTile(name: string): Promise<ArrayBuffer | null> {
   return rec?.buffer ?? null
 }
 
-/** Кэш карт ITU (wasm-режим, ТЗ 6.2). */
+/** Кэш карт ITU (wasm-режим). */
 export async function putItuMap(name: string, text: string): Promise<void> {
   await tx(STORE_ITU_MAPS, 'readwrite', (s) => s.put({ name, text }) as unknown as IDBRequest<IDBValidKey>)
 }
@@ -166,4 +171,18 @@ export async function putItuMap(name: string, text: string): Promise<void> {
 export async function listItuMaps(): Promise<{ name: string; size: number }[]> {
   const all = await tx<{ name: string; text: string }[]>(STORE_ITU_MAPS, 'readonly', (s) => s.getAll() as IDBRequest<{ name: string; text: string }[]>)
   return all.map((t) => ({ name: t.name, size: t.text.length }))
+}
+
+/** Кэш конвертированных SXF/RSC (clutter) в IndexedDB — данные не теряются при перезагрузке. */
+export async function putClutterCache(gj: unknown): Promise<void> {
+  await tx(STORE_CLUTTER, 'readwrite', (s) => s.put({ key: 'clutter', gj }) as unknown as IDBRequest<IDBValidKey>)
+}
+
+export async function getClutterCache(): Promise<unknown | null> {
+  const rec = await tx<{ key: string; gj: unknown } | undefined>(STORE_CLUTTER, 'readonly', (s) => s.get('clutter') as IDBRequest<{ key: string; gj: unknown } | undefined>)
+  return rec?.gj ?? null
+}
+
+export async function clearClutterCache(): Promise<void> {
+  await tx(STORE_CLUTTER, 'readwrite', (s) => s.delete('clutter') as unknown as IDBRequest<undefined>)
 }
