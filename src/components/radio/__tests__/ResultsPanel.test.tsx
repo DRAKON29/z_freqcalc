@@ -15,6 +15,49 @@ vi.mock('@/lib/radio/export', async (importOriginal) => {
   return { ...actual, download: vi.fn() }
 })
 
+// Круговая диаграмма — тяжёлый расчёт по азимутам; в тестах ResultsPanel мокается
+vi.mock('@/lib/radio/coverage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/radio/coverage')>()
+  const radials = Array.from({ length: 72 }, (_, i) => ({
+    azDeg: i * 5,
+    maxKm: 40 + (i % 4),
+    marginAtMaxDb: 5.5,
+    strongKm: 25 + (i % 3),
+  }))
+  const fakeCoverage = {
+    radiusKm: 40,
+    azimuthStepDeg: 5,
+    radials,
+    stats: {
+      coveredAzimuthPercent: 100,
+      areaPercent: 64.2,
+      minKm: 40,
+      medianKm: 41.5,
+      maxKm: 43,
+      strongMinKm: 25,
+      strongMaxKm: 27,
+    },
+    frequencyMhz: 2400,
+    routeKm: 30,
+    routeAzDeg: 65,
+    engineUsed: 'TS: test engine',
+    computedAtMs: 12,
+  }
+  const fakeGrid = {
+    n: 2,
+    halfM: 1000,
+    data: new Float32Array([0, 100, 200, 300]),
+    minElev: 0,
+    maxElev: 300,
+    nodataZero: false,
+  }
+  return {
+    ...actual,
+    computeCoverage: vi.fn().mockReturnValue(fakeCoverage),
+    sampleElevationGrid: vi.fn().mockReturnValue(fakeGrid),
+  }
+})
+
 beforeEach(() => resetStore())
 
 describe('пустое состояние', () => {

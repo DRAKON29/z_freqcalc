@@ -30,6 +30,7 @@ import {
 import { earthBulgeM } from '@/lib/radio/fspl'
 import { fresnelRadiusM } from '@/lib/radio/fresnel'
 import { buildExportPayload, toJson, toCsv, download } from '@/lib/radio/export'
+import { CoveragePanel } from '@/components/radio/CoveragePanel'
 import { AlertTriangle, Download, FileJson, FileSpreadsheet } from 'lucide-react'
 
 export function ResultsPanel() {
@@ -279,6 +280,9 @@ export function ResultsPanel() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Круговая диаграмма радиосигнала с учётом рельефа */}
+      <CoveragePanel />
 
       {/* Профиль трассы */}
       <Card>

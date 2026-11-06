@@ -47,6 +47,16 @@ if (typeof window !== 'undefined' && !window.scrollTo) {
   window.scrollTo = vi.fn()
 }
 
+// ---- Radix Select: Pointer Capture API и scrollIntoView в jsdom отсутствуют ----
+if (typeof window !== 'undefined') {
+  window.HTMLElement.prototype.hasPointerCapture ??= () => false
+  window.HTMLElement.prototype.setPointerCapture ??= () => {}
+  window.HTMLElement.prototype.releasePointerCapture ??= () => {}
+  window.HTMLElement.prototype.scrollIntoView ??= () => {}
+  // в jsdom нет реального канваса — рисование диаграмм в тестах безопасно заглушено
+  window.HTMLCanvasElement.prototype.getContext = vi.fn(() => null) as unknown as typeof window.HTMLCanvasElement.prototype.getContext
+}
+
 // ---- AbortSignal.timeout есть в Node 18+; страховка не нужна, но проверим ----
 // ---- Тихий console.error для ожидаемых предупреждений React act() ----
 const origError = console.error
