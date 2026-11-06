@@ -46,9 +46,22 @@ local-*
 *.log
 dev.log
 dev.out.log
-test
-prompt
 
 server.log
 # Skills directory
 /skills/
+
+# python runtime
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# pid files
+*.pid
+
+# runtime data (том ./data, локальные базы)
+mini-services/radio-service/data/history/*.db
+db/custom.db
+mini-services/radio-service/data/itu_maps/*
+!mini-services/radio-service/data/itu_maps/test-map.txt
