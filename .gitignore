@@ -41,6 +41,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 local-*
+!src/lib/radio/models/local-model.ts
 .claude
 .z-ai-config
 *.log
