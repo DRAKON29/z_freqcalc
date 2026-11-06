@@ -30,11 +30,12 @@ import {
 import { earthBulgeM } from '@/lib/radio/fspl'
 import { fresnelRadiusM } from '@/lib/radio/fresnel'
 import { buildExportPayload, toJson, toCsv, download } from '@/lib/radio/export'
+import { CoveragePanel } from '@/components/radio/CoveragePanel'
 import { AlertTriangle, Download, FileJson, FileSpreadsheet } from 'lucide-react'
 
 export function ResultsPanel() {
   const s = useRadioStore()
-  const { result, budget, lastInput, rangeResults, reverseResult, reverseBudget, reverseInput, mobileFrequencyMhz, frequencyMode, terrainWarning } = s
+  const { result, budget, lastInput, rangeResults, reverseResult, reverseBudget, reverseInput, reverseRangeResults, mobileFrequencyMhz, mobileFrequencyMode, terrainWarning } = s
 
   const profileData = useMemo(() => {
     if (!lastInput) return []
@@ -85,6 +86,12 @@ export function ResultsPanel() {
   }
 
   const rangeData = (rangeResults ?? []).map((r) => ({
+    f: r.frequencyMhz,
+    loss: +r.medianLossDb.toFixed(1),
+    margin: +r.linkMarginDb.toFixed(1),
+  }))
+
+  const reverseRangeData = (reverseRangeResults ?? []).map((r) => ({
     f: r.frequencyMhz,
     loss: +r.medianLossDb.toFixed(1),
     margin: +r.linkMarginDb.toFixed(1),
@@ -159,6 +166,71 @@ export function ResultsPanel() {
             Запас на линию (link margin) &lt; 0: линия связи не обеспечивается (SNR ниже требуемого Eb/N₀ на {Math.abs(budget.linkMarginDb).toFixed(1)} дБ).
           </p>
         </div>
+      )}
+
+      {/* Условия из цифровых продуктов ITU-R P.2001-6 */}
+      {lastInput?.environment && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center justify-between gap-2 flex-wrap">
+              Условия из цифровых продуктов ITU-R P.2001-6
+              <Badge variant="outline" className="font-mono">{lastInput.environment.usedProducts.length} продукта(ов)</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-4 text-sm">
+              {lastInput.environment.rho50 !== undefined && (
+                <div><p className="text-xs text-muted-foreground">Плотность пара ρ (Surfwv_50_fixed)</p><p className="font-mono">{lastInput.environment.rho50.toFixed(1)} г/м³</p></div>
+              )}
+              {lastInput.environment.pr6 !== undefined && (
+                <div><p className="text-xs text-muted-foreground">Дождь Pr6 (Esarain_Pr6)</p><p className="font-mono">{lastInput.environment.pr6.toFixed(1)} мм/ч</p></div>
+              )}
+              {lastInput.environment.rainMassMt !== undefined && (
+                <div><p className="text-xs text-muted-foreground">Масса дождя Mt (Esarain_Mt)</p><p className="font-mono">{lastInput.environment.rainMassMt.toFixed(0)} кг/м²/год</p></div>
+              )}
+              {lastInput.environment.beta0 !== undefined && (
+                <div><p className="text-xs text-muted-foreground">Вероятность дождя β (Esarain_Beta)</p><p className="font-mono">{(lastInput.environment.beta0 * 100).toFixed(2)} %</p></div>
+              )}
+              {lastInput.environment.rainProbP0 !== undefined && (
+                <div><p className="text-xs text-muted-foreground">Вероятность дождя P0 (P.837-6)</p><p className="font-mono">{lastInput.environment.rainProbP0.toFixed(2)} %</p></div>
+              )}
+              {lastInput.environment.rainRate001 !== undefined && (
+                <div><p className="text-xs text-muted-foreground">Дождь R0.01 (P.837-6, шаг 5)</p><p className="font-mono">{lastInput.environment.rainRate001.toFixed(1)} мм/ч</p></div>
+              )}
+              {lastInput.environment.isothermH0Km !== undefined && (
+                <div><p className="text-xs text-muted-foreground">Изотерма 0 °C h0 (P.839-4)</p><p className="font-mono">{lastInput.environment.isothermH0Km.toFixed(2)} км</p></div>
+              )}
+              {lastInput.environment.dnMedian !== undefined && (
+                <div><p className="text-xs text-muted-foreground">Медианный ΔN (DN_Median)</p><p className="font-mono">{lastInput.environment.dnMedian.toFixed(1)} N/км</p></div>
+              )}
+              {lastInput.environment.dndz01 !== undefined && (
+                <div><p className="text-xs text-muted-foreground">ΔN при 0.1 % (dndz_01)</p><p className="font-mono">{lastInput.environment.dndz01.toFixed(1)} N/км</p></div>
+              )}
+              {lastInput.environment.k50 !== undefined && (
+                <div><p className="text-xs text-muted-foreground">k-фактор медианы (из ΔN)</p><p className="font-mono">{lastInput.environment.k50.toFixed(2)}{lastInput.kFactorSource === 'itu' ? ' (использован)' : ''}</p></div>
+              )}
+              {lastInput.environment.k01 !== undefined && (
+                <div><p className="text-xs text-muted-foreground">k-фактор при 0.1 %</p><p className="font-mono">{lastInput.environment.k01.toFixed(2)}</p></div>
+              )}
+              {lastInput.environment.tropoZone !== undefined && (
+                <div><p className="text-xs text-muted-foreground">Зона TropoClim (Annex E)</p><p className="font-mono">№ {lastInput.environment.tropoZone}</p></div>
+              )}
+              {lastInput.environment.foEs001 !== undefined && (
+                <div><p className="text-xs text-muted-foreground">foEs 0.1/1/10/50 % (Annex G)</p><p className="font-mono">{lastInput.environment.foEs001?.toFixed(1)} / {lastInput.environment.foEs01?.toFixed(1)} / {lastInput.environment.foEs10?.toFixed(1)} / {lastInput.environment.foEs50?.toFixed(1)} МГц</p></div>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {lastInput.environment.usedProducts.map((f) => (
+                <Badge key={f} variant="secondary" className="font-mono text-xs">{f}</Badge>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {lastInput.environment.pr6 !== undefined && 'Дождь из карт ITU: CCDF R(p) по P.837-6 (Pr6, Mt, β) — в хвосте распределения (p ≤ P0); медиана — без дождя. '}
+              {lastInput.kFactorSource === 'itu' && 'k-фактор геометрии взят из карты DN_Median (P.453): k = 157/(157 + ΔN). '}
+              Извлечение — среднее значений в точках A и Б (билинейная интерполяция P.1144; TropoClim — ближайший узел).
+            </p>
+          </CardContent>
+        </Card>
       )}
 
       {/* Бюджет линии: приход/расход */}
@@ -309,16 +381,75 @@ export function ResultsPanel() {
             </CardContent>
           </CardContent>
         </Card>
-      ) : (
+      ) : !(reverseRangeResults && reverseRangeResults.length > 0) ? (
         <p className="text-xs text-muted-foreground">
           Обратная линия не рассчитана:{' '}
-          {frequencyMode === 'range'
-            ? 'в режиме диапазона частот выполняется развёртка только для прямой линии.'
+          {mobileFrequencyMode === 'range'
+            ? 'включён режим диапазона для подвижного — выполните расчёт, чтобы получить развёртку обратной линии.'
             : mobileFrequencyMhz < 500 || mobileFrequencyMhz > 7000
               ? 'частота подвижного передатчика вне диапазона 500–7000 МГц.'
               : 'частота подвижного передатчика совпадает с частотой наземного.'}
         </p>
+      ) : null}
+
+      {/* Обратная линия — развёртка по диапазону частот подвижного передатчика */}
+      {reverseRangeResults && reverseRangeResults.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex flex-wrap items-center justify-between gap-2">
+              Обратная линия — диапазон частот:{' '}
+              {reverseRangeResults[0].frequencyMhz.toFixed(1)}–
+              {reverseRangeResults[reverseRangeResults.length - 1].frequencyMhz.toFixed(1)} МГц
+              <Badge variant="outline" className="font-mono">подвижный Tx → наземный Rx</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 lg:grid-cols-2">
+            <div className="h-[240px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={reverseRangeData} margin={{ top: 5, right: 10, bottom: 16, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                  <XAxis dataKey="f" tick={{ fontSize: 11 }} label={{ value: 'МГц', position: 'insideBottom', offset: -8, fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    formatter={(value: number, name: string) => [`${value} дБ`, name === 'loss' ? 'Потери' : 'Запас']}
+                    labelFormatter={(l) => `${l} МГц`}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} formatter={(v) => (v === 'loss' ? 'Потери' : 'Запас (link margin)')} />
+                  <Line type="monotone" dataKey="loss" stroke="#d97706" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="margin" stroke="#dc2626" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-right">Частота, МГц</TableHead>
+                  <TableHead className="text-right">Потери, дБ</TableHead>
+                  <TableHead className="text-right">P_rx (наземный), дБм</TableHead>
+                  <TableHead className="text-right">SNR, дБ</TableHead>
+                  <TableHead className="text-right">Запас, дБ</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {reverseRangeResults.map((r) => (
+                  <TableRow key={r.frequencyMhz}>
+                    <TableCell className="text-right font-mono">{r.frequencyMhz.toFixed(1)}</TableCell>
+                    <TableCell className="text-right font-mono">{r.medianLossDb.toFixed(1)}</TableCell>
+                    <TableCell className="text-right font-mono">{r.prxDbm.toFixed(1)}</TableCell>
+                    <TableCell className="text-right font-mono">{r.snrDb.toFixed(1)}</TableCell>
+                    <TableCell className={`text-right font-mono ${r.linkMarginDb < 0 ? 'text-destructive' : ''}`}>
+                      {r.linkMarginDb.toFixed(1)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       )}
+
+      {/* Круговая диаграмма радиосигнала с учётом рельефа */}
+      <CoveragePanel />
 
       {/* Профиль трассы */}
       <Card>

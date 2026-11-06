@@ -22,8 +22,10 @@ import { createModel, defaultBackend } from '@/lib/radio/models'
 import { computeLinkBudget } from '@/lib/radio/budget'
 import { buildProfile, createHgtDem, createSyntheticDem, makeClutterSampler, parseHgt, pathTileCoverage, type ClutterGeoJson, type HgtTile } from '@/lib/radio/terrain'
 import { distanceM, bearingDeg, wgs84ToSk42, sk42ToWgs84 } from '@/lib/radio/coordinates'
-import { getDeviceId, saveHistory, syncEntry } from '@/lib/radio/history'
+import { getDeviceId, saveHistory, syncEntry, listItuMaps, getItuMap, deleteItuMap } from '@/lib/radio/history'
 import { calculationInputSchema, dynamicParamsSchema } from '@/lib/radio/validation'
+import { ituEnvironmentAt, ituProductKey, type ItuGridSet } from '@/lib/radio/itu-env'
+import type { ItuGrid } from '@/lib/radio/itu-grid'
 import { LIMITS } from '@/lib/radio/constants'
 
 export const DEFAULT_EQUIPMENT: EquipmentParams = {
@@ -67,6 +69,13 @@ function buildInput(s: RadioState): CalculationInput {
   const clutterSampler = s.clutter ? makeClutterSampler(s.clutter) : undefined
   const profile = buildProfile(s.pointA, s.pointB, dem, clutterSampler)
   const dist = distanceM(s.pointA, s.pointB)
+
+  // Условия из цифровых продуктов ITU-R P.2001-6: извлечение в точках трассы.
+  // Загруженные продукты перекрывают ручные значения (R0.01 → дождь, DN_Median → k-фактор).
+  const env = Object.keys(s.ituGrids).length > 0 ? ituEnvironmentAt(s.ituGrids, s.pointA, s.pointB) : null
+  const ituRain = env?.rainRate001
+  const ituK = env?.k50
+
   return {
     frequencyMhz: s.frequencyMhz,
     polarization: s.polarization,
@@ -81,8 +90,14 @@ function buildInput(s: RadioState): CalculationInput {
     txHeightM: s.txHeightM,
     rxHeightM: s.rxHeightM,
     timePercents: [50, 90, 99, 99.9],
-    kFactor: s.kFactor,
-    atmosphere: s.atmosphere,
+    kFactor: ituK ?? s.kFactor,
+    kFactorSource: ituK !== undefined ? 'itu' : 'user',
+    atmosphere: {
+      ...s.atmosphere,
+      rainRateMmH: ituRain ?? s.atmosphere.rainRateMmH,
+      rainSource: ituRain !== undefined ? 'itu' : s.atmosphere.rainSource === 'itu' ? undefined : s.atmosphere.rainSource,
+    },
+    environment: env && env.usedProducts.length > 0 ? env : undefined,
     epsilon: 15,
     sigma: 0.005,
     climateZone: s.climateZone,
@@ -96,9 +111,14 @@ export interface RadioState {
   frequencyMhz: number
   /** Частота передатчика подвижной станции (обратная линия) */
   mobileFrequencyMhz: number
+  /** Режим частоты наземного передатчика (прямая линия) */
   frequencyMode: 'single' | 'range'
   freqFromMhz: number
   freqToMhz: number
+  /** Режим частоты подвижного передатчика (обратная линия) */
+  mobileFrequencyMode: 'single' | 'range'
+  mobileFreqFromMhz: number
+  mobileFreqToMhz: number
   polarization: 'vertical' | 'horizontal' | 'circular'
   txHeightM: number
   rxHeightM: number
@@ -115,14 +135,20 @@ export interface RadioState {
   clutter: ClutterGeoJson | null
   demInfo: string
 
+  // Цифровые продукты ITU-R P.2001-6 (Table 3): разобранные сетки + ошибки проверки
+  ituGrids: ItuGridSet
+  ituLoadErrors: Record<string, string>
+
   // Результаты
   calculating: boolean
   result: PropagationResult | null
   budget: LinkBudget | null
-  /** Обратная линия: подвижный Tx → наземный Rx (только режим «одна частота») */
+  /** Обратная линия: подвижный Tx → наземный Rx (одна частота) */
   reverseResult: PropagationResult | null
   reverseBudget: LinkBudget | null
   reverseInput: CalculationInput | null
+  /** Обратная линия в режиме «диапазон»: развёртка по частотам подвижного передатчика */
+  reverseRangeResults: RangeFreqResult[] | null
   rangeResults: RangeFreqResult[] | null
   lastInput: CalculationInput | null
   lastError: string | null
@@ -150,6 +176,12 @@ export interface RadioState {
   addHgtTile: (buffer: ArrayBuffer, filename: string) => string | null
   setClutter: (gj: ClutterGeoJson | null) => void
   setAltitudes: (list: number[]) => void
+  /** Разбор и добавление продукта ITU (после сохранения в кэш IndexedDB). */
+  addItuGrid: (name: string, text: string) => Promise<{ ok: boolean; error?: string; info?: string }>
+  /** Удаление продукта ITU из состояния и кэша. */
+  removeItuGrid: (name: string) => Promise<void>
+  /** Загрузка сохранённых карт ITU из IndexedDB и разбор всех продуктов. */
+  loadItuMaps: () => Promise<void>
   applyDynamicsFromTrack: () => void
   checkBackend: () => Promise<boolean>
   calculate: () => Promise<void>
@@ -165,6 +197,9 @@ export const useRadioStore = create<RadioState>((set, get) => ({
   frequencyMode: 'single',
   freqFromMhz: 2400,
   freqToMhz: 2480,
+  mobileFrequencyMode: 'single',
+  mobileFreqFromMhz: 2400,
+  mobileFreqToMhz: 2480,
   polarization: 'vertical',
   txHeightM: 30,
   rxHeightM: 10,
@@ -180,12 +215,16 @@ export const useRadioStore = create<RadioState>((set, get) => ({
   clutter: null,
   demInfo: 'Синтетический рельеф (demo)',
 
+  ituGrids: {},
+  ituLoadErrors: {},
+
   calculating: false,
   result: null,
   budget: null,
   reverseResult: null,
   reverseBudget: null,
   reverseInput: null,
+  reverseRangeResults: null,
   rangeResults: null,
   lastInput: null,
   lastError: null,
@@ -236,6 +275,74 @@ export const useRadioStore = create<RadioState>((set, get) => ({
   setClutter: (gj) => set({ clutter: gj }),
 
   setAltitudes: (list) => set({ altitudes: list }),
+
+  addItuGrid: async (name, text) => {
+    const { parseItuGrid, ItuGridParseError, validateItuFile } = await import('@/lib/radio/itu-grid')
+    const v = validateItuFile(name, text)
+    if (!v.ok) {
+      set((s) => ({ ituLoadErrors: { ...s.ituLoadErrors, [name]: v.error ?? 'ошибка' } }))
+      return { ok: false, error: v.error }
+    }
+    try {
+      const grid = parseItuGrid(name, text)
+      set((s) => ({
+        ituGrids: { ...s.ituGrids, [grid.spec.name]: grid },
+        ituLoadErrors: Object.fromEntries(Object.entries(s.ituLoadErrors).filter(([k]) => k !== name && k !== grid.spec.name)),
+      }))
+      return { ok: true, info: v.info }
+    } catch (e) {
+      const err = e instanceof ItuGridParseError || e instanceof Error ? e.message : String(e)
+      set((s) => ({ ituLoadErrors: { ...s.ituLoadErrors, [name]: err } }))
+      return { ok: false, error: err }
+    }
+  },
+
+  removeItuGrid: async (name) => {
+    const key = ituProductKey(name) ?? name
+    set((s) => {
+      const grids = { ...s.ituGrids }
+      delete grids[key]
+      delete grids[name]
+      const errs = { ...s.ituLoadErrors }
+      delete errs[key]
+      delete errs[name]
+      return { ituGrids: grids, ituLoadErrors: errs }
+    })
+    try {
+      await deleteItuMap(name)
+    } catch {
+      // кэш недоступен — не критично
+    }
+  },
+
+  loadItuMaps: async () => {
+    try {
+      const stored = await listItuMaps()
+      const grids: Record<string, ItuGrid> = {}
+      const errors: Record<string, string> = {}
+      const { parseItuGrid, validateItuFile } = await import('@/lib/radio/itu-grid')
+      for (const { name } of stored) {
+        const text = await getItuMap(name)
+        if (text === null) continue
+        const v = validateItuFile(name, text)
+        if (!v.ok) {
+          errors[name] = v.error ?? 'ошибка проверки'
+          continue
+        }
+        try {
+          const grid = parseItuGrid(name, text)
+          grids[grid.spec.name] = grid
+        } catch {
+          // повреждённая сетка пропускается
+        }
+      }
+      // Слияние (а не перезапись): свежие продукты, добавленные до завершения
+      // фоновой загрузки кэша, не теряются
+      set((s) => ({ ituGrids: { ...grids, ...s.ituGrids }, ituLoadErrors: { ...s.ituLoadErrors, ...errors } }))
+    } catch {
+      // IndexedDB недоступна — игнорируем
+    }
+  },
 
   /** Заполнение параметров динамики по трассе: вручную остаются только высота и скорость. */
   applyDynamicsFromTrack: () => {
@@ -296,27 +403,52 @@ export const useRadioStore = create<RadioState>((set, get) => ({
 
       const model = createModel(s.backend, s.model)
 
-      // Режим «диапазон частот»: расчёт по списку частот
+      // Обратная линия (подвижный Tx → наземный Rx): передаёт подвижная станция —
+      // её антенна и мощность; параметры приёмника (NF, полоса, модуляция) общие —
+      // одна радиосистема.
+      const reverseEquipment: EquipmentParams = {
+        mode: s.equipment.mode,
+        tx: s.equipment.rx,
+        rx: s.equipment.tx,
+        transmitter: { ...s.equipment.transmitter, powerDbm: s.equipment.receiver.powerDbm },
+        receiver: { ...s.equipment.receiver, sensitivityDbm: s.equipment.transmitter.sensitivityDbm },
+      }
+      const calcReverse = async (f: number) => {
+        const revInput: CalculationInput = { ...baseInput, frequencyMhz: f }
+        const revParsed = calculationInputSchema.safeParse(revInput)
+        if (!revParsed.success) return null
+        const revProp = await model.calculate(revInput)
+        return { input: revInput, prop: revProp, budget: computeLinkBudget(revInput, reverseEquipment, revProp) }
+      }
+
+      let result: PropagationResult
+      let budget: LinkBudget
+      let lastInput: CalculationInput
+      let rangeResults: RangeFreqResult[] | null = null
+      let historyName: string
+      let historyFreq: number
+
+      // Прямая линия: одна частота или развёртка по диапазону
       if (s.frequencyMode === 'range') {
         const freqs = buildFreqList(s.freqFromMhz, s.freqToMhz)
-        const rangeResults: RangeFreqResult[] = []
+        rangeResults = []
         let mainProp: PropagationResult | null = null
         let mainBudget: LinkBudget | null = null
         let mainInput: CalculationInput | null = null
         for (const f of freqs) {
           const input: CalculationInput = { ...baseInput, frequencyMhz: f }
           const prop = await model.calculate(input)
-          const budget = computeLinkBudget(input, s.equipment, prop)
+          const b = computeLinkBudget(input, s.equipment, prop)
           rangeResults.push({
             frequencyMhz: f,
             medianLossDb: prop.medianLossDb,
-            linkMarginDb: budget.linkMarginDb,
-            prxDbm: budget.prxDbm,
-            snrDb: budget.snrDb,
+            linkMarginDb: b.linkMarginDb,
+            prxDbm: b.prxDbm,
+            snrDb: b.snrDb,
           })
           if (mainProp === null) {
             mainProp = prop
-            mainBudget = budget
+            mainBudget = b
             mainInput = input
           }
         }
@@ -328,84 +460,66 @@ export const useRadioStore = create<RadioState>((set, get) => ({
           mainProp = await model.calculate(midInput)
           mainBudget = computeLinkBudget(midInput, s.equipment, mainProp)
         }
-        set({
-          result: mainProp,
-          budget: mainBudget,
-          reverseResult: null,
-          reverseBudget: null,
-          reverseInput: null,
-          rangeResults,
-          lastInput: mainInput,
-          calculating: false,
-          lastCalculatedAt: new Date().toISOString(),
-        })
-
-        // История
-        try {
-          const entry: Omit<HistoryEntry, 'id' | 'synced'> = {
-            deviceId: getDeviceId(),
-            createdAt: new Date().toISOString(),
-            name: `${freqs[0].toFixed(0)}–${freqs[freqs.length - 1].toFixed(0)} МГц (диапазон), ${(mainInput!.path.distanceM / 1000).toFixed(1)} км`,
-            model: s.model,
-            engineUsed: mainProp!.engineUsed,
-            backend: s.backend,
-            frequencyMhz: freqs[midIdx],
-            distanceKm: mainInput!.path.distanceM / 1000,
-            medianLossDb: mainProp!.medianLossDb,
-            linkMarginDb: mainBudget!.linkMarginDb,
-            input: mainInput!,
-            budget: mainBudget!,
-          }
-          const saved = await saveHistory(entry)
-          void syncEntry(saved)
-        } catch {
-          // История — не критичный путь
-        }
-        return
+        result = mainProp!
+        budget = mainBudget!
+        lastInput = mainInput!
+        historyName = `${freqs[0].toFixed(0)}–${freqs[freqs.length - 1].toFixed(0)} МГц (диапазон), ${(lastInput.path.distanceM / 1000).toFixed(1)} км`
+        historyFreq = freqs[midIdx]
+      } else {
+        // Обычный режим: одна частота
+        const prop = await model.calculate(baseInput)
+        result = prop
+        budget = computeLinkBudget(baseInput, s.equipment, prop)
+        lastInput = baseInput
+        historyName = `${(lastInput.path.distanceM / 1000).toFixed(1)} км @ ${s.frequencyMhz} МГц`
+        historyFreq = s.frequencyMhz
       }
 
-      // Обычный режим: одна частота
-      const input = baseInput
-      const prop = await model.calculate(input)
-      const budget = computeLinkBudget(input, s.equipment, prop)
-
-      // Обратная линия: подвижный Tx → наземный Rx на частоте подвижного передатчика.
-      // Параметры приёмника (NF, полоса, модуляция) общие — одна радиосистема.
+      // Обратная линия: по режиму частоты подвижного передатчика
       let reverseResult: PropagationResult | null = null
       let reverseBudget: LinkBudget | null = null
       let reverseInput: CalculationInput | null = null
-      const mf = s.mobileFrequencyMhz
-      if (
-        mf >= LIMITS.frequencyMinMhz &&
-        mf <= LIMITS.frequencyMaxMhz &&
-        Math.abs(mf - input.frequencyMhz) > 1e-9
-      ) {
-        const revInput: CalculationInput = { ...input, frequencyMhz: mf }
-        const revParsed = calculationInputSchema.safeParse(revInput)
-        if (revParsed.success) {
-          const revProp = await model.calculate(revInput)
-          const revEquipment: EquipmentParams = {
-            mode: s.equipment.mode,
-            // передаёт подвижная станция: её антенна и мощность
-            tx: s.equipment.rx,
-            rx: s.equipment.tx,
-            transmitter: { ...s.equipment.transmitter, powerDbm: s.equipment.receiver.powerDbm },
-            receiver: { ...s.equipment.receiver, sensitivityDbm: s.equipment.transmitter.sensitivityDbm },
+      let reverseRangeResults: RangeFreqResult[] | null = null
+      if (s.mobileFrequencyMode === 'range') {
+        const freqs = buildFreqList(s.mobileFreqFromMhz, s.mobileFreqToMhz)
+        reverseRangeResults = []
+        for (const f of freqs) {
+          const r = await calcReverse(f)
+          if (r) {
+            reverseRangeResults.push({
+              frequencyMhz: f,
+              medianLossDb: r.prop.medianLossDb,
+              linkMarginDb: r.budget.linkMarginDb,
+              prxDbm: r.budget.prxDbm,
+              snrDb: r.budget.snrDb,
+            })
           }
-          reverseResult = revProp
-          reverseBudget = computeLinkBudget(revInput, revEquipment, revProp)
-          reverseInput = revInput
+        }
+      } else {
+        const mf = s.mobileFrequencyMhz
+        if (
+          mf >= LIMITS.frequencyMinMhz &&
+          mf <= LIMITS.frequencyMaxMhz &&
+          Math.abs(mf - lastInput.frequencyMhz) > 1e-9
+        ) {
+          const r = await calcReverse(mf)
+          if (r) {
+            reverseResult = r.prop
+            reverseBudget = r.budget
+            reverseInput = r.input
+          }
         }
       }
 
       set({
-        result: prop,
+        result,
         budget,
         reverseResult,
         reverseBudget,
         reverseInput,
-        rangeResults: null,
-        lastInput: input,
+        reverseRangeResults,
+        rangeResults,
+        lastInput,
         calculating: false,
         lastCalculatedAt: new Date().toISOString(),
       })
@@ -415,15 +529,15 @@ export const useRadioStore = create<RadioState>((set, get) => ({
         const entry: Omit<HistoryEntry, 'id' | 'synced'> = {
           deviceId: getDeviceId(),
           createdAt: new Date().toISOString(),
-          name: `${(input.path.distanceM / 1000).toFixed(1)} км @ ${s.frequencyMhz} МГц`,
+          name: historyName,
           model: s.model,
-          engineUsed: prop.engineUsed,
+          engineUsed: result.engineUsed,
           backend: s.backend,
-          frequencyMhz: s.frequencyMhz,
-          distanceKm: input.path.distanceM / 1000,
-          medianLossDb: prop.medianLossDb,
+          frequencyMhz: historyFreq,
+          distanceKm: lastInput.path.distanceM / 1000,
+          medianLossDb: result.medianLossDb,
           linkMarginDb: budget.linkMarginDb,
-          input,
+          input: lastInput,
           budget,
         }
         const saved = await saveHistory(entry)
@@ -479,7 +593,7 @@ export const useRadioStore = create<RadioState>((set, get) => ({
     })
   },
 
-  resetResults: () => set({ result: null, budget: null, reverseResult: null, reverseBudget: null, reverseInput: null, rangeResults: null, dynamics: null, dynamicsAll: [], lastError: null }),
+  resetResults: () => set({ result: null, budget: null, reverseResult: null, reverseBudget: null, reverseInput: null, reverseRangeResults: null, rangeResults: null, dynamics: null, dynamicsAll: [], lastError: null }),
 }))
 
 /** СК-42 для точки (для отображения в UI). */

@@ -29,11 +29,35 @@ export const pathSchema = z.object({
 
 export const atmosphereSchema = z.object({
   rainRateMmH: z.number().min(0).max(150).optional(),
+  rainSource: z.enum(['itu', 'user']).optional(),
   gases: z.boolean(),
   vegetation: z.boolean(),
   waterVaporKgM2: z.number().min(0).max(60).optional(),
   temperatureK: z.number().min(180).max(340).optional(),
   pressureHPa: z.number().min(500).max(1100).optional(),
+})
+
+/** Условия из цифровых продуктов ITU-R P.2001-6 (Table 3). */
+export const ituEnvironmentSchema = z.object({
+  rho50: z.number().min(0).max(60).optional(),
+  pr6: z.number().min(0).max(150).optional(),
+  rainMassMt: z.number().min(0).max(12000).optional(),
+  beta0: z.number().min(0).max(1).optional(),
+  rainProbP0: z.number().min(0).max(100).optional(),
+  rainRate001: z.number().min(0).max(150).optional(),
+  isothermH0Km: z.number().min(0).max(15).optional(),
+  dnMedian: z.number().min(-500).max(500).optional(),
+  dndz01: z.number().min(-1000).max(500).optional(),
+  dnSubSlope: z.number().min(-1000).max(1000).optional(),
+  dnSupSlope: z.number().min(-1000).max(1000).optional(),
+  tropoZone: z.number().int().min(1).max(14).optional(),
+  foEs001: z.number().min(0).max(50).optional(),
+  foEs01: z.number().min(0).max(50).optional(),
+  foEs10: z.number().min(0).max(50).optional(),
+  foEs50: z.number().min(0).max(50).optional(),
+  k50: z.number().min(0.5).max(10).optional(),
+  k01: z.number().min(0.5).max(10).optional(),
+  usedProducts: z.array(z.string().min(1)).max(20),
 })
 
 export const calculationInputSchema = z.object({
@@ -47,7 +71,9 @@ export const calculationInputSchema = z.object({
   rxHeightM: z.number().min(0.5).max(600),
   timePercents: z.array(z.number().min(0.001).max(99.999)).min(1),
   kFactor: z.number().min(0.5).max(10),
+  kFactorSource: z.enum(['itu', 'user']).optional(),
   atmosphere: atmosphereSchema,
+  environment: ituEnvironmentSchema.optional(),
   epsilon: z.number().min(1).max(81),
   sigma: z.number().min(0).max(30),
   climateZone: z.string().min(1).max(2),

@@ -279,20 +279,58 @@ export function InputPanel() {
 
             <div className="space-y-2 rounded-lg border p-2.5">
               <p className="text-xs font-semibold text-amber-700">Подвижный (Tx) — обратная линия</p>
-              <div>
-                <Label className="text-xs">Частота передатчика, МГц ({LIMITS.frequencyMinMhz}–{LIMITS.frequencyMaxMhz})</Label>
-                <Input
-                  type="number"
-                  min={LIMITS.frequencyMinMhz}
-                  max={LIMITS.frequencyMaxMhz}
-                  value={s.mobileFrequencyMhz}
-                  onChange={(e) => s.setField('mobileFrequencyMhz', Number(e.target.value))}
-                />
+              {/* Режим частоты подвижного: одна / диапазон */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className={s.mobileFrequencyMode === 'single' ? 'font-medium' : 'text-muted-foreground'}>Одна частота</span>
+                  <Switch
+                    checked={s.mobileFrequencyMode === 'range'}
+                    onCheckedChange={(v) => s.setField('mobileFrequencyMode', v ? 'range' : 'single')}
+                    aria-label="Переключатель режима частоты подвижного"
+                  />
+                  <span className={s.mobileFrequencyMode === 'range' ? 'font-medium' : 'text-muted-foreground'}>
+                    Диапазон
+                  </span>
+                </div>
+                {s.mobileFrequencyMode === 'range' && (
+                  <Badge variant="secondary" className="text-[10px]">до 12 точек</Badge>
+                )}
               </div>
-              {s.frequencyMode === 'range' && (
-                <p className="text-[11px] text-muted-foreground">
-                  В режиме диапазона обратная линия не рассчитывается.
-                </p>
+
+              {s.mobileFrequencyMode === 'single' ? (
+                <div>
+                  <Label className="text-xs">Частота передатчика, МГц ({LIMITS.frequencyMinMhz}–{LIMITS.frequencyMaxMhz})</Label>
+                  <Input
+                    type="number"
+                    min={LIMITS.frequencyMinMhz}
+                    max={LIMITS.frequencyMaxMhz}
+                    value={s.mobileFrequencyMhz}
+                    onChange={(e) => s.setField('mobileFrequencyMhz', Number(e.target.value))}
+                  />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs">Частота от, МГц</Label>
+                    <Input
+                      type="number"
+                      min={LIMITS.frequencyMinMhz}
+                      max={LIMITS.frequencyMaxMhz}
+                      value={s.mobileFreqFromMhz}
+                      onChange={(e) => s.setField('mobileFreqFromMhz', Number(e.target.value))}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Частота до, МГц</Label>
+                    <Input
+                      type="number"
+                      min={LIMITS.frequencyMinMhz}
+                      max={LIMITS.frequencyMaxMhz}
+                      value={s.mobileFreqToMhz}
+                      onChange={(e) => s.setField('mobileFreqToMhz', Number(e.target.value))}
+                    />
+                  </div>
+                </div>
               )}
             </div>
           </div>
