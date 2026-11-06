@@ -9,7 +9,7 @@
  *    и готовый clutter.geojson;
  *  • настройки PWA.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type * as LType from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useRadioStore } from '@/store/radio-store'
@@ -25,11 +25,49 @@ import { parseHgt } from '@/lib/radio/terrain'
 import { parseSxf, parseRscNames, convertSxfToClutter, mergeClutter } from '@/lib/radio/sxf'
 import { apiUrl } from '@/lib/radio/models/api'
 import { LIMITS } from '@/lib/radio/constants'
-import { Map as MapIcon, Upload, Trash2, Mountain, TreePine, Waves, FileBox, RefreshCw } from 'lucide-react'
+import { Map as MapIcon, Upload, Trash2, Mountain, TreePine, Waves, FileBox, RefreshCw, ChevronDown } from 'lucide-react'
 
 interface ItuMapInfo {
   name: string
   size: number
+}
+
+/** Карточка-секция со сворачиваемым содержимым (по клику на заголовок). */
+function CollapsibleCard({
+  title,
+  icon,
+  defaultOpen = false,
+  contentClassName = 'space-y-3',
+  children,
+}: {
+  title: ReactNode
+  icon?: ReactNode
+  defaultOpen?: boolean
+  contentClassName?: string
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <CardTitle className="text-base flex items-center gap-2">
+            {icon}
+            {title}
+          </CardTitle>
+          <ChevronDown
+            className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? '' : '-rotate-90'}`}
+          />
+        </button>
+      </CardHeader>
+      {open && <CardContent className={contentClassName}>{children}</CardContent>}
+    </Card>
+  )
 }
 
 /** Мини-карта: границы загруженных тайлов рельефа + трасса A–Б. */
@@ -194,22 +232,34 @@ export function MapsPanel() {
     })()
   }, [setHgtTiles])
 
-  const uploadItuMap = async (file: File) => {
+  const uploadItuMaps = async (list: FileList | null) => {
+    if (!list || list.length === 0) return
     setMapError(null)
     setMessage(null)
-    const ext = file.name.toLowerCase().split('.').pop() ?? ''
-    if (ext !== 'txt' && ext !== 'zip') {
-      setMapError('Допустимы только файлы .txt и .zip')
-      return
+    const files = Array.from(list)
+    const errors: string[] = []
+    const valid: File[] = []
+    for (const f of files) {
+      const ext = f.name.toLowerCase().split('.').pop() ?? ''
+      if (ext !== 'txt' && ext !== 'zip') {
+        errors.push(`${f.name}: допустимы только .txt и .zip`)
+        continue
+      }
+      const limit = ext === 'zip' ? LIMITS.ituMapMaxZipBytes : LIMITS.ituMapMaxFileBytes
+      if (f.size > limit) {
+        errors.push(`${f.name}: размер ${(f.size / 1e6).toFixed(0)} МБ превышает лимит ${(limit / 1e6).toFixed(0)} МБ`)
+        continue
+      }
+      valid.push(f)
     }
-    const limit = ext === 'zip' ? LIMITS.ituMapMaxZipBytes : LIMITS.ituMapMaxFileBytes
-    if (file.size > limit) {
-      setMapError(`Размер ${file.size / 1e6} МБ превышает лимит ${limit / 1e6} МБ`)
-      return
-    }
+
     if (backend === 'http') {
+      if (valid.length === 0) {
+        setMapError(errors.join('; ').slice(0, 400))
+        return
+      }
       const fd = new FormData()
-      fd.append('file', file)
+      for (const f of valid) fd.append('files', f)
       try {
         const res = await fetch(apiUrl('/maps/upload'), { method: 'POST', body: fd })
         if (res.status === 413) {
@@ -221,16 +271,27 @@ export function MapsPanel() {
           setMapError(`Ошибка загрузки: ${t.slice(0, 200)}`)
           return
         }
-        setMessage(`Карта ${file.name} загружена (${(file.size / 1e3).toFixed(0)} кБ)`)
-        await refreshMaps()
+        const data = (await res.json()) as {
+          uploaded?: { name: string }[]
+          failed?: { name: string; detail: string }[]
+        }
+        const okCount = data.uploaded?.length ?? 0
+        const serverErrors = (data.failed ?? []).map((x) => `${x.name}: ${x.detail}`)
+        if (okCount > 0) setMessage(`Загружено карт: ${okCount}`)
+        const allErrors = [...errors, ...serverErrors]
+        if (allErrors.length) setMapError(allErrors.join('; ').slice(0, 400))
+        if (okCount > 0) await refreshMaps()
       } catch (e) {
         setMapError(`Сервис недоступен: ${e instanceof Error ? e.message : e}`)
       }
     } else {
-      // wasm-режим: карта в IndexedDB
-      const { putItuMap } = await import('@/lib/radio/history')
-      await putItuMap(file.name, await file.text())
-      setMessage(`Карта ${file.name} сохранена в браузере (IndexedDB, wasm-режим)`)
+      // wasm-режим: карты в IndexedDB
+      for (const f of valid) {
+        const { putItuMap } = await import('@/lib/radio/history')
+        await putItuMap(f.name, await f.text())
+      }
+      if (valid.length > 0) setMessage(`Сохранено карт в браузере (IndexedDB, wasm-режим): ${valid.length}`)
+      if (errors.length) setMapError(errors.join('; ').slice(0, 400))
     }
   }
 
@@ -358,13 +419,10 @@ export function MapsPanel() {
         </div>
       )}
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Mountain className="h-4 w-4 text-emerald-600" /> Рельеф (DEM) — границы загруженных тайлов
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <CollapsibleCard
+        title="Рельеф (DEM) — границы загруженных тайлов"
+        icon={<Mountain className="h-4 w-4 text-emerald-600" />}
+      >
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-xs text-muted-foreground flex-1 min-w-[220px]">
               Активный источник: <Badge variant="secondary">{demInfo}</Badge>. Загрузите тайлы SRTM (.hgt) — они
@@ -400,16 +458,12 @@ export function MapsPanel() {
               Тайлы не загружены — карта пуста. После загрузки .hgt здесь появятся прямоугольники покрытия.
             </p>
           )}
-        </CardContent>
-      </Card>
+      </CollapsibleCard>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <TreePine className="h-4 w-4 text-emerald-600" /> Здания и растительность (SXF/RSC)
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <CollapsibleCard
+        title="Здания и растительность (SXF/RSC)"
+        icon={<TreePine className="h-4 w-4 text-emerald-600" />}
+      >
           <p className="text-xs text-muted-foreground">
             Загрузите «голые» файлы SXF (+ при желании классификатор RSC) — приложение конвертирует их само,
             без внешних инструментов. Координаты метрики СК-42 преобразуются в WGS 84, площадные объекты
@@ -497,28 +551,34 @@ export function MapsPanel() {
               )}
             </div>
           </div>
-        </CardContent>
-      </Card>
+      </CollapsibleCard>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <MapIcon className="h-4 w-4 text-emerald-600" /> Цифровые карты ITU (P.2001)
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <CollapsibleCard
+        title="Цифровые карты ITU (P.2001)"
+        icon={<MapIcon className="h-4 w-4 text-emerald-600" />}
+      >
           <p className="text-xs text-muted-foreground">
-            Формат: .txt (один файл) или .zip (архив). Лимиты: 700 МБ на файл, 1 ГБ на zip.
-            При превышении — ошибка 413 Payload Too Large. Валидация: расширение, размер, структура, версия.
+            Формат: .txt или .zip; можно выбрать сразу несколько файлов. Лимиты: 700 МБ на файл, 1 ГБ на zip.
+            Поддерживаются карты с заголовком key = value (с полем version) и числовые сетки официальных
+            таблиц ITU-R P.2001 (DN_Median, Esarain_*, FoEs* и т.п.).
             {backend === 'http'
               ? ' Загрузка на сервер (том ./data/itu_maps).'
               : ' wasm-режим: карты хранятся в браузере (IndexedDB).'}
           </p>
           <div className="flex items-center gap-2">
             <label className="inline-flex">
-              <Input type="file" accept=".txt,.zip" className="hidden" onChange={(e) => e.target.files?.[0] && void uploadItuMap(e.target.files[0])} />
+              <Input
+                type="file"
+                accept=".txt,.zip"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  void uploadItuMaps(e.target.files)
+                  e.target.value = ''
+                }}
+              />
               <Button size="sm" variant="outline" asChild>
-                <span><Upload className="h-4 w-4 mr-1" /> Загрузить карту ITU</span>
+                <span><Upload className="h-4 w-4 mr-1" /> Загрузить карты ITU</span>
               </Button>
             </label>
           </div>
@@ -546,14 +606,9 @@ export function MapsPanel() {
               </TableBody>
             </Table>
           )}
-        </CardContent>
-      </Card>
+      </CollapsibleCard>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Настройки и PWA</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
+      <CollapsibleCard title="Настройки и PWA" contentClassName="space-y-2 text-sm">
           <p>
             Анонимный device_id: <code className="px-1 bg-muted rounded font-mono text-xs">{deviceId || '…'}</code>
           </p>
@@ -561,8 +616,7 @@ export function MapsPanel() {
             История привязана к device_id без авторизации. HTTPS обязателен для PWA-установки;
             Service Worker кэширует оболочку приложения и /api/* (stale-while-revalidate, TTL 1 ч).
           </p>
-        </CardContent>
-      </Card>
+      </CollapsibleCard>
     </div>
   )
 }
