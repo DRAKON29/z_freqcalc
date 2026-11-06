@@ -24,6 +24,7 @@ import io
 import json
 import math
 import os
+import re
 import sqlite3
 import time
 import uuid
@@ -109,8 +110,26 @@ def history_conn():
 
 # ---------- Карты ITU: валидация ----------
 
+_NUM_TOKEN_RE = re.compile(r"^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$")
+
+
+def _looks_like_numeric_grid(text: str) -> bool:
+    """Официальные таблицы ITU-R P.2001 (DN_Median, DN_SubSlope, DN_SupSlope,
+    dndz_01, Esarain_*, FoEs* и т.п.) — числовые сетки без заголовка key = value.
+    Проверяем, что файл — матрица чисел (≥2 строки по ≥3 числа)."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if len(lines) < 2:
+        return False
+    for ln in lines[:50]:
+        tokens = ln.split()
+        if len(tokens) < 3 or any(not _NUM_TOKEN_RE.match(t) for t in tokens):
+            return False
+    return True
+
+
 def validate_itu_txt(text: str) -> None:
-    """Проверка структуры карты ITU: заголовок с key = value, наличие version."""
+    """Проверка карты ITU: заголовок key = value (с version) ИЛИ числовая сетка
+    официальных таблиц ITU-R P.2001, поставляемых без заголовка."""
     if len(text) < 10:
         raise HTTPException(422, "Файл карты слишком мал или пуст")
     header_ok = False
@@ -123,7 +142,13 @@ def validate_itu_txt(text: str) -> None:
             if key == "version":
                 has_version = True
     if not header_ok:
-        raise HTTPException(422, "Не найден заголовок карты ITU (строки вида key = value)")
+        if _looks_like_numeric_grid(text):
+            return
+        raise HTTPException(
+            422,
+            "Не найден заголовок карты ITU (строки вида key = value); "
+            "содержимое также не является числовой сеткой ITU-R P.2001",
+        )
     if not has_version:
         raise HTTPException(422, "В карте ITU не найдено поле version")
 
@@ -244,9 +269,26 @@ def _validate_input(inp: dict) -> None:
 
 
 @app.post("/api/maps/upload")
-async def maps_upload(request: Request, file: UploadFile = File(...)):
+async def maps_upload(request: Request, files: list[UploadFile] = File(...)):
     rate_limit(request, RATE_LIMIT_UPLOAD, "upload")
-    name = file.filename or "map.txt"
+    uploaded: list[dict] = []
+    failed: list[dict] = []
+    first_error: HTTPException | None = None
+    for file in files:
+        name = file.filename or "map.txt"
+        try:
+            uploaded.append(await _save_itu_map(file, name))
+        except HTTPException as e:
+            failed.append({"name": name, "status": e.status_code, "detail": e.detail})
+            if first_error is None or (e.status_code == 413 and first_error.status_code != 413):
+                first_error = e
+    if failed and not uploaded:
+        assert first_error is not None
+        raise HTTPException(first_error.status_code, f"{failed[0]['name']}: {first_error.detail}")
+    return {"ok": True, "uploaded": uploaded, "failed": failed}
+
+
+async def _save_itu_map(file: UploadFile, name: str) -> dict:
     ext = name.lower().rsplit(".", 1)[-1]
     if ext not in ("txt", "zip"):
         raise HTTPException(422, f"Недопустимое расширение .{ext} — ожидается .txt или .zip")
@@ -264,7 +306,7 @@ async def maps_upload(request: Request, file: UploadFile = File(...)):
 
     target = ITU_MAPS_DIR / Path(name).name
     target.write_bytes(data)
-    return {"ok": True, "name": target.name, "size": len(data)}
+    return {"name": target.name, "size": len(data)}
 
 
 @app.get("/api/maps/status")
