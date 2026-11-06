@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Калькулятор распространения радиоволн
 
 Веб-приложение для инженерной оценки радиотрасс «точка–точка» и «точка–подвижный объект»
@@ -36,6 +35,24 @@
 - Сервис: `cd mini-services/radio-service && uvicorn main:app --port 8000`.
 - Переменные: `.env` → `NEXT_PUBLIC_MODEL_BACKEND=http`, `NEXT_PUBLIC_API_PORT=8000`.
 
+### Локально (вне песочницы)
+Шлюз `?XTransformPort=8000` существует только в песочнице; локально фронт
+должен ходить на Python-сервис напрямую через `NEXT_PUBLIC_API_BASE`:
+
+```bash
+# 1. Python-сервис (порт 8000)
+cd mini-services/radio-service
+python -m venv .venv
+.venv/Scripts/pip install -r requirements.txt   # Linux/macOS: .venv/bin/pip
+.venv/Scripts/python -m uvicorn main:app --host 127.0.0.1 --port 8000
+
+# 2. Frontend (порт 3000, из корня репозитория)
+NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000/api bun install && NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000/api bun run dev
+```
+
+Без `NEXT_PUBLIC_API_BASE` запросы `/api/*` уходят в Next.js и HttpPropagationModel
+молча переключается на локальный TS-fallback (FSPL + P.526) с предупреждением в UI.
+
 ### Гибридный режим http (ТЗ 6.1)
 ```bash
 docker compose -f deploy/docker-compose.yml up -d --build
@@ -69,7 +86,7 @@ docker compose -f deploy/docker-compose.wasm.yml up -d --build
 | 4.8 Визуализация | карта Leaflet (точки, трасса, маркеры, зона связи, траектория, анимация); профиль (рельеф с кривизной Земли, LOS, F1, препятствия); бюджет (таблица + итоговые карточки); график потерь vs % времени; графики динамики с tooltip |
 | 4.9 Экспорт/история | экспорт JSON и CSV; история: IndexedDB (локально, офлайн) + синхронизация с Python-сервисом (http-режим); анонимный device_id; фильтры (модель, бэкенд, дата); fallback — только IndexedDB при недоступности сервера |
 | 4.10 PWA | manifest.webmanifest (иконки 192/512, standalone, theme_color, start_url); Service Worker: precache оболочки, runtime-cache `/api/*` stale-while-revalidate TTL 1 ч; офлайн-оболочка с локальной историей; баннер «Установить приложение» (beforeinstallprompt) |
-| 5.1 Карты ITU | .txt/.zip; загрузка через UI (`POST /api/maps/upload`) или том `./data/itu_maps`; лимиты 700 МБ/файл, 1 ГБ/zip; валидация расширения, размера, структуры (key=value), версии; 413 при превышении; `GET /api/maps/status`, `DELETE /api/maps/{name}` |
+| 5.1 Карты ITU | .txt/.zip; множественная загрузка за один запрос; через UI (`POST /api/maps/upload`) или том `./data/itu_maps`; лимиты 700 МБ/файл, 1 ГБ/zip; валидация расширения, размера, структуры — заголовок key=value (с version) **или** числовая сетка официальных таблиц ITU-R P.2001 (DN_Median, Esarain_*, FoEs* и т.п.); 413 при превышении; `GET /api/maps/status`, `DELETE /api/maps/{name}` |
 | 3.4 Безопасность | HTTPS (терминация в 1Panel); zod-валидация всех входных данных на клиенте + повторная на сервере; CORS и rate limiting (60 req/мин расчёт, 10/мин загрузка) на Python-сервисе; анонимный device_id без авторизации |
 
 ## Решения (ТЗ 9.3 — фиксируются в README)
@@ -111,7 +128,9 @@ docker compose -f deploy/docker-compose.wasm.yml up -d --build
 bun test tests/
 
 # Юнит-тесты формул Python (25 тестов): P.2001-lite, P.838, P.676, бюджет, доплер
-cd mini-services/radio-service && python3 -m pytest tests/ -q
+cd mini-services/radio-service
+pip install -r requirements.txt pytest
+python3 -m pytest tests/ -q
 ```
 
 Покрыто: формулы P.525/P.526/P.838/P.676/P.833; бюджет линии (EIRP, SNR, link margin);
@@ -151,6 +170,3 @@ tests/                  — юнит-тесты TS (bun test)
 | GET/POST | /api/history | история по device_id |
 | DELETE | /api/history/{id} | удалить запись |
 | GET | /api/dem | высота через прокси Copernicus GLO-30 (AWS Terrain Tiles) |
-=======
-# z_freqcalc
->>>>>>> bdce0d8aac3dcbdd055e9f8f36fe0fa18c0a7353
