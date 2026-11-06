@@ -62,6 +62,17 @@ cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q
 на русском, пушим в `dev_`.
 
 Реализовано в этой сессии (сверху вниз):
+- `32fab51` — режим частоты подвижного (свой переключатель «одна частота / диапазон»,
+  развёртка обратной линии до 12 точек с обменом оборудования, карточка развёртки
+  в результатах); перенос функционала из `web_dev_z` (ручной merge): цифровые
+  продукты ITU-R P.2001-6 (Table 3) автоматически участвуют в расчёте p2001-lite
+  (k из DN_Median по P.453, дождь CCDF P.837-6 из Esarain, ρ из Surfwv_50_fixed,
+  зона TropoClim, диагноз Es-слоя по FoEs), продукты берутся из кэша браузера
+  (IndexedDB, `loadItuMaps()` на монте) независимо от сервера; таблица статусов
+  продуктов в «Картах»; круговая диаграмма зоны покрытия (`coverage.ts` +
+  `CoveragePanel`, монтируется в результатах); карточка «Условия из цифровых
+  продуктов ITU» в результатах; фикс прокрутки таблицы истории (нативный
+  overflow + липкая шапка)
 - `0f2f79e` — частоты по станциям (`mobileFrequencyMhz` в store) + **обратная линия**
   (подвижный Tx → наземный Rx на своей частоте; в режиме «диапазон» и при равных
   частотах не считается — в ResultsPanel пояснение); секция обратной линии в результатах
@@ -81,12 +92,14 @@ cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q
 
 ## Известные ограничения / незакрытое
 
-1. **py2001 не подключён**: карты ITU загружаются и хранятся (`data/itu_maps`),
-   но P.2001-lite их не читает. Точка расширения — `api_calculate` в `main.py`
-   (блок `if model == "p2001" and _py2001_available()`: сейчас поднимает
-   «требуется адаптер карт»). Полный набор таблиц лежит у пользователя в `D:\itu\P_2001-6`.
-2. **Обратная линия не попадает** в историю (IndexedDB/сервер), PDF-экспорт и JSON/CSV —
-   там только прямая. Развёртка диапазона — тоже только прямая линия.
+1. **py2001 (python) карты не читает**: TS-модель p2001lite цифровые продукты ITU
+   уже использует (кэш браузера, поле `environment` в input), а python-сервис их
+   игнорирует. Точка расширения — `api_calculate` в `main.py` (блок
+   `if model == "p2001" and _py2001_available()`: сейчас поднимает «требуется
+   адаптер карт»). Полный набор таблиц лежит у пользователя в `D:\itu\P_2001-6`.
+2. **Обратная линия не попадает** в историю (IndexedDB/сервер), PDF-экспорт и
+   JSON/CSV — там только прямая. Сами расчёты обратной линии в любой комбинации
+   режимов частоты (одна/диапазон у каждой станции) работают с `32fab51`.
 3. **Динамика** (вкладка «Динамика», `doppler.ts`) считает только прямую линию; борт
    стартует над точкой A. runDynamics берёт параметры из equipment (tx-мощность,
    rx-чувствительность), а не из стационарного расчёта.
@@ -97,25 +110,32 @@ cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q
 
 ## Заметки по автоматизации UI (браузерные проверки)
 
-- Вкладки Radix из Playwright-локаторов могут не кликаться (таймаут actionability) —
-  надёжнее dispatch последовательности `pointerdown/mousedown/pointerup/mouseup/click`
-  через `playwright.evaluate` (Radix активирует вкладку на mousedown, простой `.click()`
-  не работает).
+- В IAB-сборке через Playwright-локаторы могут не кликаться не только вкладки Radix,
+  но и свитчи и обычные кнопки (таймаут actionability) — надёжнее dispatch
+  последовательности `pointerdown/mousedown/pointerup/mouseup/click` через
+  `playwright.evaluate` (Radix активирует вкладку на mousedown, простой `.click()`
+  не работает). Реакция React на dispatch асинхронная — состояние проверять с
+  задержкой, не сразу.
 - Значения React-инпутов менять через native setter
   (`Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set`) + `input` event.
 - Файл-аплоуд в IAB-браузере не автоматизируется — проверять загрузку curl'ом
-  (`POST /api/maps/upload`, поле `files`).
+  (`POST /api/maps/upload`, поле `files`); для проверки «карта → расчёт» можно
+  вписать продукт напрямую в IndexedDB (`radio-propagation`, store `itu_maps`,
+  записи `{name, text}`) и перезагрузить страницу.
 
 ## Ключевые файлы
 
 | Путь | Что |
 |---|---|
-| `src/store/radio-store.ts` | всё состояние: ввод, equipment, atmosphere, результаты (result/budget/reverse*), dynamics, `buildInput()`, `calculate()` |
-| `src/lib/radio/types.ts` | `CalculationInput`, `EquipmentParams`, `PropagationResult`, `LinkBudget` |
+| `src/store/radio-store.ts` | всё состояние: ввод, equipment, atmosphere, ituGrids, результаты (result/budget/reverse*/reverseRange*), dynamics, `buildInput()`, `calculate()` |
+| `src/lib/radio/types.ts` | `CalculationInput`, `EquipmentParams`, `PropagationResult`, `LinkBudget`, `ItuEnvironmentData` |
 | `src/lib/radio/budget.ts` | `computeLinkBudget(input, equipment, prop, extra)` — приход/расход, EIRP, SNR, margin |
-| `src/lib/radio/p2001lite.ts` | TS-модель (fallback), `computeP2001Lite`, `computeFsplP526` |
+| `src/lib/radio/p2001lite.ts` | TS-модель (fallback), `computeP2001Lite`, `computeFsplP526`; читает `input.environment` (продукты ITU) |
+| `src/lib/radio/itu-grid.ts` | парсер/валидатор сеток ITU-R P.2001-6 (Table 3): 121×241, 161×321, 360×720, спецификации продуктов |
+| `src/lib/radio/itu-env.ts` | `ITU_PRODUCTS`, `ituEnvironmentAt()` — извлечение условий в точках трассы (билинейная интерполяция P.1144) |
+| `src/lib/radio/coverage.ts` + `src/components/radio/CoveragePanel.tsx` | круговая диаграмма зоны покрытия: граница связи по азимутам с учётом рельефа, канва с гипсометрией |
 | `mini-services/radio-service/main.py` | FastAPI: `/api/calculate`, `/api/maps/*`, `/api/clutter`, `/api/history`, `/api/dem`; валидация карт (`_looks_like_numeric_grid`) |
 | `mini-services/radio-service/p2001_lite.py` | P.2001-lite + бюджет (python) |
-| `src/components/radio/` | панели: Input, Equipment, Results, Dynamics, History, Maps, Map, Pwa |
-| `src/app/page.tsx` | вкладки Расчёт/Динамика/История/Карты, порядок панелей |
+| `src/components/radio/` | панели: Input, Equipment, Results, Dynamics, History, Maps, Map, Coverage, Pwa |
+| `src/app/page.tsx` | вкладки Расчёт/Динамика/История/Карты, порядок панелей, `loadItuMaps()` на монте |
 | `deploy/` | docker-compose http/wasm, openresty |
