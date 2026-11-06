@@ -26,8 +26,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install FastAPI
-        run: pip install fastapi uvicorn pytest
+      - name: Install service dependencies
+        run: pip install -r mini-services/radio-service/requirements.txt pytest
       - name: Unit tests (formulas)
         working-directory: mini-services/radio-service
         run: python3 -m pytest tests/ -q
