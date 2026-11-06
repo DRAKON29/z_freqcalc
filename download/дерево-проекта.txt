@@ -1,0 +1,494 @@
+ДЕРЕВО КАТАЛОГОВ И ФАЙЛОВ ПРОЕКТА
+Корень: /home/z/my-project
+Дата: 2026-11-06 18:28 UTC
+Исключены артефакты сборки и зависимости: node_modules, .next, .git, __pycache__, .venv, *.log
+Статистика в конце — по показанному дереву (без исключённых каталогов).
+================================================================
+[4.0K]  .
+├── [4.0K]  .github
+│   └── [4.0K]  workflows
+│       └── [ 786]  ci.yml
+├── [4.0K]  .zscripts
+│   ├── [7.1K]  build.sh
+│   ├── [ 901]  database-runtime-build.sh
+│   ├── [   5]  dev.pid
+│   ├── [4.1K]  dev.sh
+│   ├── [2.3K]  mini-services-build.sh
+│   ├── [1.9K]  mini-services-install.sh
+│   ├── [3.2K]  mini-services-start.sh
+│   ├── [4.1K]  python-runtime-build.sh
+│   └── [4.3K]  start.sh
+├── [4.0K]  db
+│   └── [ 24K]  custom.db
+├── [4.0K]  deploy
+│   ├── [ 700]  Dockerfile.backend
+│   ├── [ 803]  Dockerfile.frontend
+│   ├── [ 478]  docker-compose.wasm.yml
+│   ├── [1023]  docker-compose.yml
+│   └── [1.8K]  openresty.conf
+├── [4.0K]  download
+│   ├── [  34]  README.md
+│   ├── [878K]  app-screenshot.png
+│   └── [ 455]  дерево-проекта.txt
+├── [4.0K]  examples
+│   └── [4.0K]  websocket
+│       ├── [6.2K]  frontend.tsx
+│       └── [3.5K]  server.ts
+├── [4.0K]  mini-services
+│   ├── [4.0K]  radio-service
+│   │   ├── [4.0K]  data
+│   │   │   ├── [4.0K]  clutter
+│   │   │   ├── [4.0K]  dem
+│   │   │   │   └── [ 26K]  11_1238_640.png
+│   │   │   ├── [4.0K]  history
+│   │   │   │   └── [604K]  history.db
+│   │   │   └── [4.0K]  itu_maps
+│   │   ├── [4.0K]  tests
+│   │   │   └── [7.4K]  test_formulas.py
+│   │   ├── [ 18K]  main.py
+│   │   └── [ 14K]  p2001_lite.py
+│   └── [   0]  .gitkeep
+├── [4.0K]  prisma
+│   └── [ 794]  schema.prisma
+├── [4.0K]  public
+│   ├── [4.0K]  fonts
+│   │   ├── [692K]  DejaVuSans-Bold.ttf
+│   │   └── [742K]  DejaVuSans.ttf
+│   ├── [4.0K]  icons
+│   │   ├── [2.3K]  icon-192.png
+│   │   └── [7.1K]  icon-512.png
+│   ├── [4.0K]  py
+│   │   └── [ 14K]  p2001_lite.py
+│   ├── [1.0K]  logo.svg
+│   ├── [ 865]  manifest.webmanifest
+│   ├── [ 160]  robots.txt
+│   └── [3.7K]  sw.js
+├── [4.0K]  scripts
+│   ├── [1.8K]  clean-tz-mentions.py
+│   ├── [1.8K]  gen-sxf.ts
+│   ├── [8.8K]  sxf2geojson.py
+│   ├── [6.6K]  test-sxf.ts
+│   ├── [4.0K]  verify-itu-products.ts
+│   └── [2.1K]  verify_itu_grids.py
+├── [4.0K]  skills
+│   ├── [4.0K]  ASR
+│   │   ├── [4.0K]  scripts
+│   │   │   └── [ 650]  asr.ts
+│   │   ├── [1.1K]  LICENSE.txt
+│   │   └── [ 15K]  SKILL.md
+│   ├── [4.0K]  LLM
+│   │   ├── [4.0K]  scripts
+│   │   │   └── [ 758]  chat.ts
+│   │   ├── [1.1K]  LICENSE.txt
+│   │   └── [ 21K]  SKILL.md
+│   ├── [4.0K]  TTS
+│   │   ├── [1.1K]  LICENSE.txt
+│   │   ├── [ 20K]  SKILL.md
+│   │   └── [ 656]  tts.ts
+│   ├── [4.0K]  VLM
+│   │   ├── [4.0K]  scripts
+│   │   │   └── [1.4K]  vlm.ts
+│   │   ├── [1.1K]  LICENSE.txt
+│   │   └── [ 14K]  SKILL.md
+│   ├── [4.0K]  agent-browser
+│   │   └── [ 10K]  SKILL.md
+│   ├── [4.0K]  charts
+│   │   ├── [4.0K]  references
+│   │   │   ├── [2.0K]  _rules.md
+│   │   │   ├── [6.1K]  d3.md
+│   │   │   ├── [ 19K]  echarts.md
+│   │   │   ├── [ 20K]  matplotlib.md
+│   │   │   ├── [ 25K]  mermaid.md
+│   │   │   ├── [ 36K]  mindmap-css.md
+│   │   │   ├── [ 30K]  playwright-css.md
+│   │   │   ├── [ 20K]  radial-grid.md
+│   │   │   └── [ 10K]  seaborn.md
+│   │   ├── [ 745]  LICENSE.txt
+│   │   ├── [ 21K]  SKILL.md
+│   │   └── [7.3K]  setup.sh
+│   ├── [4.0K]  docx
+│   │   ├── [4.0K]  references
+│   │   │   ├── [ 13K]  chart-templates.md
+│   │   │   ├── [ 24K]  common-rules.md
+│   │   │   ├── [ 20K]  decorations.md
+│   │   │   ├── [ 77K]  design-system.md
+│   │   │   ├── [8.2K]  docx-js-advanced.md
+│   │   │   ├── [9.5K]  docx-js-core.md
+│   │   │   ├── [ 12K]  faq.md
+│   │   │   ├── [7.7K]  math-formulas.md
+│   │   │   ├── [8.7K]  ooxml.md
+│   │   │   └── [ 11K]  toc.md
+│   │   ├── [4.0K]  routes
+│   │   │   ├── [2.3K]  comment.md
+│   │   │   ├── [ 12K]  create.md
+│   │   │   ├── [3.2K]  edit.md
+│   │   │   ├── [3.2K]  format.md
+│   │   │   └── [2.7K]  read.md
+│   │   ├── [4.0K]  scenes
+│   │   │   ├── [ 33K]  academic.md
+│   │   │   ├── [ 20K]  contract.md
+│   │   │   ├── [5.4K]  copywriting.md
+│   │   │   ├── [ 25K]  exam.md
+│   │   │   ├── [ 15K]  official-doc.md
+│   │   │   ├── [ 15K]  report.md
+│   │   │   └── [ 21K]  resume.md
+│   │   ├── [4.0K]  scripts
+│   │   │   ├── [4.0K]  templates
+│   │   │   │   ├── [2.6K]  comments.xml
+│   │   │   │   ├── [2.6K]  commentsExtended.xml
+│   │   │   │   ├── [2.7K]  commentsExtensible.xml
+│   │   │   │   ├── [2.6K]  commentsIds.xml
+│   │   │   │   └── [ 147]  people.xml
+│   │   │   ├── [  65]  __init__.py
+│   │   │   ├── [ 27K]  add_toc_placeholders.py
+│   │   │   ├── [ 52K]  document.py
+│   │   │   ├── [ 30K]  postcheck.py
+│   │   │   └── [ 13K]  utilities.py
+│   │   ├── [ 745]  LICENSE.txt
+│   │   ├── [ 12K]  SKILL.md
+│   │   └── [5.6K]  setup.sh
+│   ├── [4.0K]  fullstack-dev
+│   │   └── [ 12K]  SKILL.md
+│   ├── [4.0K]  image-edit
+│   │   ├── [4.0K]  scripts
+│   │   │   └── [1.1K]  image-edit.ts
+│   │   ├── [1.1K]  LICENSE.txt
+│   │   └── [ 24K]  SKILL.md
+│   ├── [4.0K]  image-generation
+│   │   ├── [4.0K]  scripts
+│   │   │   └── [ 813]  image-generation.ts
+│   │   ├── [1.1K]  LICENSE.txt
+│   │   └── [ 15K]  SKILL.md
+│   ├── [4.0K]  image-search
+│   │   └── [6.6K]  SKILL.md
+│   ├── [4.0K]  pdf
+│   │   ├── [4.0K]  briefs
+│   │   │   ├── [ 46K]  academic.md
+│   │   │   ├── [ 48K]  creative-fixed-canvas.md
+│   │   │   ├── [ 10K]  creative-flow.md
+│   │   │   ├── [ 46K]  creative.md
+│   │   │   ├── [ 33K]  poster.md
+│   │   │   ├── [ 14K]  process.md
+│   │   │   ├── [ 75K]  report.md
+│   │   │   └── [ 10K]  resume.md
+│   │   ├── [4.0K]  configs
+│   │   │   ├── [5.1K]  components.md
+│   │   │   ├── [4.2K]  fonts.md
+│   │   │   └── [ 13K]  visual_framework.md
+│   │   ├── [4.0K]  env_setup
+│   │   │   ├── [1.7K]  env_check.sh
+│   │   │   ├── [4.7K]  font_list.txt
+│   │   │   ├── [7.0K]  setup.md
+│   │   │   ├── [ 11K]  setup_mac_linux.sh
+│   │   │   └── [ 11K]  setup_windows.ps1
+│   │   ├── [4.0K]  references
+│   │   │   ├── [4.7K]  resume-academic.tex
+│   │   │   └── [6.0K]  resume-altacv.tex
+│   │   ├── [4.0K]  scripts
+│   │   │   ├── [ 22K]  cover_validate.js
+│   │   │   ├── [121K]  design_engine.py
+│   │   │   ├── [ 34K]  html2pdf-next.js
+│   │   │   ├── [8.7K]  html2poster.js
+│   │   │   ├── [105K]  pdf.py
+│   │   │   ├── [ 42K]  pdf_qa.py
+│   │   │   ├── [ 61K]  poster_validate.py
+│   │   │   ├── [ 11K]  setup.sh
+│   │   │   └── [ 77K]  toc_validate.py
+│   │   ├── [4.0K]  typesetting
+│   │   │   ├── [ 12K]  charts.md
+│   │   │   ├── [ 16K]  cover-backgrounds.md
+│   │   │   ├── [ 46K]  cover.md
+│   │   │   ├── [ 20K]  fill-engine.md
+│   │   │   ├── [5.5K]  geometry.md
+│   │   │   ├── [ 22K]  overflow.md
+│   │   │   ├── [ 13K]  pagination.md
+│   │   │   ├── [9.1K]  palette.md
+│   │   │   └── [1.0K]  typography.md
+│   │   ├── [ 745]  LICENSE.txt
+│   │   └── [ 57K]  SKILL.md
+│   ├── [4.0K]  pptx
+│   │   ├── [4.0K]  ooxml
+│   │   │   └── [4.0K]  scripts
+│   │   │       ├── [4.0K]  validation
+│   │   │       │   ├── [ 336]  __init__.py
+│   │   │       │   ├── [ 39K]  base.py
+│   │   │       │   ├── [9.8K]  docx.py
+│   │   │       │   ├── [ 12K]  pptx.py
+│   │   │       │   └── [ 11K]  redlining.py
+│   │   │       ├── [5.5K]  pack.py
+│   │   │       ├── [1.5K]  unpack.py
+│   │   │       └── [2.0K]  validate.py
+│   │   ├── [4.0K]  scripts
+│   │   │   ├── [ 32K]  check_slides.py
+│   │   │   ├── [1.7K]  extract_html_style.py
+│   │   │   └── [9.1K]  extract_pptx_style.py
+│   │   ├── [ 38K]  SKILL.md
+│   │   ├── [7.6K]  batch_html2pptx.js
+│   │   └── [255K]  html2pptx1.js
+│   ├── [4.0K]  skill-creator
+│   │   ├── [4.0K]  agents
+│   │   │   ├── [ 10K]  analyzer.md
+│   │   │   ├── [7.1K]  comparator.md
+│   │   │   └── [8.8K]  grader.md
+│   │   ├── [4.0K]  assets
+│   │   │   └── [6.9K]  eval_review.html
+│   │   ├── [4.0K]  eval-viewer
+│   │   │   ├── [ 16K]  generate_review.py
+│   │   │   └── [ 44K]  viewer.html
+│   │   ├── [4.0K]  references
+│   │   │   └── [ 12K]  schemas.md
+│   │   ├── [4.0K]  scripts
+│   │   │   ├── [   0]  __init__.py
+│   │   │   ├── [ 14K]  aggregate_benchmark.py
+│   │   │   ├── [ 13K]  generate_report.py
+│   │   │   ├── [ 10K]  improve_description.py
+│   │   │   ├── [4.1K]  package_skill.py
+│   │   │   ├── [3.9K]  quick_validate.py
+│   │   │   ├── [ 11K]  run_eval.py
+│   │   │   ├── [ 13K]  run_loop.py
+│   │   │   └── [1.6K]  utils.py
+│   │   ├── [ 11K]  LICENSE.txt
+│   │   └── [ 32K]  SKILL.md
+│   ├── [4.0K]  skill-finder-cn
+│   │   ├── [4.0K]  scripts
+│   │   │   └── [ 262]  search.sh
+│   │   ├── [1.2K]  SKILL.md
+│   │   ├── [ 134]  _meta.json
+│   │   └── [ 108]  package.json
+│   ├── [4.0K]  task-review
+│   │   └── [1.9K]  SKILL.md
+│   ├── [4.0K]  video-understand
+│   │   ├── [4.0K]  scripts
+│   │   │   └── [1.0K]  video-understand.ts
+│   │   ├── [1.1K]  LICENSE.txt
+│   │   └── [ 24K]  SKILL.md
+│   └── [4.0K]  xlsx
+│       ├── [4.0K]  engines
+│       │   ├── [4.7K]  chart-templates.md
+│       │   ├── [3.2K]  chart.md
+│       │   ├── [ 20K]  design.md
+│       │   └── [ 13K]  vba-templates.md
+│       ├── [4.0K]  quality
+│       │   └── [9.1K]  pipeline.md
+│       ├── [4.0K]  scenes
+│       │   ├── [6.6K]  advanced.md
+│       │   ├── [6.3K]  analyze-recipes.md
+│       │   ├── [3.6K]  analyze.md
+│       │   ├── [3.8K]  convert.md
+│       │   ├── [3.0K]  create.md
+│       │   ├── [7.0K]  edit-patterns.md
+│       │   ├── [6.7K]  edit.md
+│       │   ├── [9.4K]  finance.md
+│       │   ├── [5.1K]  finance_lite.md
+│       │   └── [7.7K]  vba.md
+│       ├── [4.0K]  templates
+│       │   ├── [ 21K]  base.py
+│       │   └── [ 16K]  palettes.py
+│       ├── [ 745]  LICENSE.txt
+│       ├── [ 10K]  SKILL.md
+│       ├── [4.4K]  setup.sh
+│       └── [ 51K]  xlsx.py
+├── [4.0K]  src
+│   ├── [4.0K]  app
+│   │   ├── [4.0K]  __tests__
+│   │   │   └── [6.1K]  page.test.tsx
+│   │   ├── [4.0K]  api
+│   │   │   ├── [4.0K]  [...path]
+│   │   │   │   └── [4.9K]  route.ts
+│   │   │   ├── [4.0K]  __tests__
+│   │   │   │   └── [ 481]  route.test.ts
+│   │   │   └── [ 134]  route.ts
+│   │   ├── [4.1K]  globals.css
+│   │   ├── [1.4K]  layout.tsx
+│   │   └── [5.5K]  page.tsx
+│   ├── [4.0K]  components
+│   │   ├── [4.0K]  radio
+│   │   │   ├── [4.0K]  __tests__
+│   │   │   │   ├── [5.7K]  CoveragePanel.test.tsx
+│   │   │   │   ├── [7.1K]  DynamicsPanel.test.tsx
+│   │   │   │   ├── [9.1K]  EquipmentPanel.test.tsx
+│   │   │   │   ├── [8.6K]  HistoryPanel.test.tsx
+│   │   │   │   ├── [7.9K]  InputPanel.test.tsx
+│   │   │   │   ├── [4.5K]  MapPanel.test.tsx
+│   │   │   │   ├── [ 22K]  MapsPanel.test.tsx
+│   │   │   │   ├── [3.6K]  Pwa.test.tsx
+│   │   │   │   ├── [7.6K]  ResultsPanel.test.tsx
+│   │   │   │   └── [3.0K]  test-utils.tsx
+│   │   │   ├── [ 16K]  CoveragePanel.tsx
+│   │   │   ├── [ 20K]  DynamicsPanel.tsx
+│   │   │   ├── [ 16K]  EquipmentPanel.tsx
+│   │   │   ├── [ 13K]  HistoryPanel.tsx
+│   │   │   ├── [ 16K]  InputPanel.tsx
+│   │   │   ├── [ 13K]  MapPanel.tsx
+│   │   │   ├── [ 33K]  MapsPanel.tsx
+│   │   │   ├── [2.0K]  Pwa.tsx
+│   │   │   └── [ 23K]  ResultsPanel.tsx
+│   │   └── [4.0K]  ui
+│   │       ├── [2.0K]  accordion.tsx
+│   │       ├── [3.8K]  alert-dialog.tsx
+│   │       ├── [1.6K]  alert.tsx
+│   │       ├── [ 280]  aspect-ratio.tsx
+│   │       ├── [1.1K]  avatar.tsx
+│   │       ├── [1.6K]  badge.tsx
+│   │       ├── [2.3K]  breadcrumb.tsx
+│   │       ├── [2.1K]  button.tsx
+│   │       ├── [7.5K]  calendar.tsx
+│   │       ├── [1.9K]  card.tsx
+│   │       ├── [5.4K]  carousel.tsx
+│   │       ├── [9.6K]  chart.tsx
+│   │       ├── [1.2K]  checkbox.tsx
+│   │       ├── [ 800]  collapsible.tsx
+│   │       ├── [4.7K]  command.tsx
+│   │       ├── [8.0K]  context-menu.tsx
+│   │       ├── [3.9K]  dialog.tsx
+│   │       ├── [4.2K]  drawer.tsx
+│   │       ├── [8.1K]  dropdown-menu.tsx
+│   │       ├── [3.7K]  form.tsx
+│   │       ├── [1.5K]  hover-card.tsx
+│   │       ├── [2.2K]  input-otp.tsx
+│   │       ├── [ 967]  input.tsx
+│   │       ├── [ 611]  label.tsx
+│   │       ├── [8.2K]  menubar.tsx
+│   │       ├── [6.5K]  navigation-menu.tsx
+│   │       ├── [2.6K]  pagination.tsx
+│   │       ├── [1.6K]  popover.tsx
+│   │       ├── [ 740]  progress.tsx
+│   │       ├── [1.4K]  radio-group.tsx
+│   │       ├── [2.0K]  resizable.tsx
+│   │       ├── [1.6K]  scroll-area.tsx
+│   │       ├── [6.1K]  select.tsx
+│   │       ├── [ 699]  separator.tsx
+│   │       ├── [4.0K]  sheet.tsx
+│   │       ├── [ 21K]  sidebar.tsx
+│   │       ├── [ 276]  skeleton.tsx
+│   │       ├── [2.0K]  slider.tsx
+│   │       ├── [ 564]  sonner.tsx
+│   │       ├── [1.1K]  switch.tsx
+│   │       ├── [2.4K]  table.tsx
+│   │       ├── [1.9K]  tabs.tsx
+│   │       ├── [ 759]  textarea.tsx
+│   │       ├── [4.7K]  toast.tsx
+│   │       ├── [ 785]  toaster.tsx
+│   │       ├── [1.9K]  toggle-group.tsx
+│   │       ├── [1.5K]  toggle.tsx
+│   │       └── [1.8K]  tooltip.tsx
+│   ├── [4.0K]  hooks
+│   │   ├── [ 565]  use-mobile.ts
+│   │   └── [3.8K]  use-toast.ts
+│   ├── [4.0K]  lib
+│   │   ├── [4.0K]  __tests__
+│   │   │   ├── [1.1K]  db.test.ts
+│   │   │   └── [3.7K]  utils-hooks.test.ts
+│   │   ├── [4.0K]  radio
+│   │   │   ├── [4.0K]  __tests__
+│   │   │   │   ├── [6.2K]  atmosphere.test.ts
+│   │   │   │   ├── [5.4K]  budget-extra.test.ts
+│   │   │   │   ├── [5.7K]  coordinates.test.ts
+│   │   │   │   ├── [9.4K]  coverage.test.ts
+│   │   │   │   ├── [8.0K]  doppler.test.ts
+│   │   │   │   ├── [4.4K]  export.test.ts
+│   │   │   │   ├── [3.2K]  fixtures.ts
+│   │   │   │   ├── [2.9K]  fresnel.test.ts
+│   │   │   │   ├── [8.0K]  history.test.ts
+│   │   │   │   ├── [ 22K]  itu-env.test.ts
+│   │   │   │   ├── [ 19K]  itu-grid.test.ts
+│   │   │   │   ├── [7.1K]  models.test.ts
+│   │   │   │   ├── [7.9K]  p2001lite.test.ts
+│   │   │   │   ├── [3.2K]  pdf.test.ts
+│   │   │   │   ├── [1.5K]  sxf-helpers.ts
+│   │   │   │   ├── [ 11K]  sxf.test.ts
+│   │   │   │   ├── [ 871]  terrain-helpers.ts
+│   │   │   │   ├── [ 10K]  terrain.test.ts
+│   │   │   │   └── [5.1K]  validation.test.ts
+│   │   │   ├── [4.0K]  models
+│   │   │   │   ├── [ 495]  api.ts
+│   │   │   │   ├── [2.3K]  http-model.ts
+│   │   │   │   ├── [ 862]  index.ts
+│   │   │   │   ├── [1.3K]  local-model.ts
+│   │   │   │   └── [3.4K]  wasm-model.ts
+│   │   │   ├── [7.8K]  atmosphere.ts
+│   │   │   ├── [4.9K]  budget.ts
+│   │   │   ├── [1.6K]  constants.ts
+│   │   │   ├── [8.9K]  coordinates.ts
+│   │   │   ├── [ 12K]  coverage.ts
+│   │   │   ├── [5.5K]  diffraction.ts
+│   │   │   ├── [7.3K]  doppler.ts
+│   │   │   ├── [3.2K]  export.ts
+│   │   │   ├── [1.4K]  fresnel.ts
+│   │   │   ├── [1.1K]  fspl.ts
+│   │   │   ├── [7.8K]  history.ts
+│   │   │   ├── [ 16K]  itu-env.ts
+│   │   │   ├── [ 10K]  itu-grid.ts
+│   │   │   ├── [ 13K]  p2001lite.ts
+│   │   │   ├── [ 12K]  pdf.ts
+│   │   │   ├── [ 13K]  sxf.ts
+│   │   │   ├── [ 12K]  terrain.ts
+│   │   │   ├── [ 10K]  types.ts
+│   │   │   └── [4.5K]  validation.ts
+│   │   ├── [ 299]  db.ts
+│   │   └── [ 166]  utils.ts
+│   └── [4.0K]  store
+│       ├── [4.0K]  __tests__
+│       │   └── [ 19K]  radio-store.test.ts
+│       └── [ 19K]  radio-store.ts
+├── [4.0K]  tests
+│   ├── [4.0K]  fixtures
+│   │   └── [4.0K]  itu
+│   │       ├── [257K]  DN_Median.txt
+│   │       ├── [257K]  DN_SubSlope.txt
+│   │       ├── [257K]  DN_SupSlope.txt
+│   │       ├── [808K]  Esarain_Beta_v5.txt
+│   │       ├── [808K]  Esarain_Mt_v5.txt
+│   │       ├── [808K]  Esarain_Pr6_v5.txt
+│   │       ├── [165K]  FoEs0.1.txt
+│   │       ├── [144K]  FoEs01.txt
+│   │       ├── [143K]  FoEs10.txt
+│   │       ├── [143K]  FoEs50.txt
+│   │       ├── [507K]  TropoClim.txt
+│   │       ├── [256K]  dndz_01.txt
+│   │       ├── [168K]  h0.txt
+│   │       └── [399K]  surfwv_50_fixed.txt
+│   ├── [7.1K]  atmosphere-terrain.test.ts
+│   ├── [4.5K]  budget.test.ts
+│   ├── [2.1K]  database-runtime-build.sh
+│   ├── [5.8K]  diffraction-coords.test.ts
+│   ├── [   0]  empty.css
+│   ├── [1.2K]  fspl.test.ts
+│   ├── [1.8K]  python-runtime-build.sh
+│   ├── [ 837]  python-runtime-container.sh
+│   └── [3.0K]  setup.ts
+├── [4.0K]  upload
+│   ├── [257K]  DN_Median.txt
+│   ├── [257K]  DN_SubSlope.txt
+│   ├── [257K]  DN_SupSlope.txt
+│   ├── [808K]  Esarain_Beta_v5.txt
+│   ├── [808K]  Esarain_Mt_v5.txt
+│   ├── [808K]  Esarain_Pr6_v5.txt
+│   ├── [165K]  FoEs0.1.txt
+│   ├── [144K]  FoEs01.txt
+│   ├── [143K]  FoEs10.txt
+│   ├── [143K]  FoEs50.txt
+│   ├── [ 21K]  README_P2001-6.docx
+│   ├── [507K]  TropoClim.txt
+│   ├── [ 73K]  db538b09-2a30-4c22-b212-2b10dab1f43d.webp
+│   ├── [256K]  dndz_01.txt
+│   ├── [168K]  h0.txt
+│   ├── [135K]  pasted_image_1793978641055.png
+│   ├── [399K]  surfwv_50_fixed.txt
+│   └── [1.3M]  tz.pdf
+├── [  50]  .env
+├── [ 637]  .gitignore
+├── [ 493]  Caddyfile
+├── [ 18K]  README.md
+├── [358K]  bun.lock
+├── [ 430]  components.json
+├── [1.6K]  eslint.config.mjs
+├── [ 251]  next-env.d.ts
+├── [ 233]  next.config.ts
+├── [3.6K]  package.json
+├── [  81]  postcss.config.mjs
+├── [1.7K]  tailwind.config.ts
+├── [ 730]  tsconfig.json
+└── [1.7K]  vitest.config.ts
+
+96 directories, 390 files
