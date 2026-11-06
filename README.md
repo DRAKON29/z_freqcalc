@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Калькулятор распространения радиоволн
 
 Веб-приложение для инженерной оценки радиотрасс «точка–точка» и «точка–подвижный объект»
@@ -150,3 +151,6 @@ tests/                  — юнит-тесты TS (bun test)
 | GET/POST | /api/history | история по device_id |
 | DELETE | /api/history/{id} | удалить запись |
 | GET | /api/dem | высота через прокси Copernicus GLO-30 (AWS Terrain Tiles) |
+=======
+# z_freqcalc
+>>>>>>> bdce0d8aac3dcbdd055e9f8f36fe0fa18c0a7353
