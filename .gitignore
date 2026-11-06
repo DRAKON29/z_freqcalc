@@ -54,3 +54,9 @@ server.log
 # Skills directory
 /skills/
 __pycache__/
+
+# local runtime data
+db/
+download/
+mini-services/radio-service/data/history/
+mini-services/radio-service/data/dem/
