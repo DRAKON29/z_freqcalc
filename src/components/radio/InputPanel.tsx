@@ -170,12 +170,12 @@ export function InputPanel() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <p className="text-sm font-medium text-emerald-700">Точка A (передатчик)</p>
+            <p className="text-sm font-medium text-emerald-700">Точка A (наземный Tx)</p>
             <CoordEditor which="A" />
           </div>
           <Separator />
           <div>
-            <p className="text-sm font-medium text-amber-700">Точка Б (приёмник)</p>
+            <p className="text-sm font-medium text-amber-700">Точка Б (подвижный Rx — текущая позиция объекта)</p>
             <CoordEditor which="Б" />
           </div>
           <Separator />
@@ -215,7 +215,7 @@ export function InputPanel() {
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Сигнал и условия</CardTitle>
+          <CardTitle className="text-base">Условия распространения</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {/* Режим частоты: одна / диапазон */}
@@ -306,28 +306,6 @@ export function InputPanel() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div>
-              <Label className="text-xs">Высота антенны Tx (передатчик), м</Label>
-              <Input
-                type="number"
-                min={0.5}
-                max={600}
-                step="0.5"
-                value={s.txHeightM}
-                onChange={(e) => s.setField('txHeightM', Number(e.target.value))}
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Высота антенны Rx (приёмник), м</Label>
-              <Input
-                type="number"
-                min={0.5}
-                max={600}
-                step="0.5"
-                value={s.rxHeightM}
-                onChange={(e) => s.setField('rxHeightM', Number(e.target.value))}
-              />
             </div>
             <div>
               <Label className="text-xs">Фактор рефракции k</Label>
