@@ -216,7 +216,7 @@ export function EquipmentPanel() {
                       min={0}
                     />
                   )}
-                  <NumField label="Чувствительность, дБм (dBm)" value={eq.transmitter.sensitivityDbm} onChange={(v) => setEquipment({ transmitter: { ...eq.transmitter, sensitivityDbm: v } })} step={1} />
+                  <NumField label="Чувствительность приёмника (обратная линия), дБм" value={eq.transmitter.sensitivityDbm} onChange={(v) => setEquipment({ transmitter: { ...eq.transmitter, sensitivityDbm: v } })} step={1} />
                 </div>
                 <p className="text-[11px] text-muted-foreground">
                   {powerUnit === 'dbm'
@@ -279,7 +279,7 @@ export function EquipmentPanel() {
               <div className="space-y-2 rounded-md border p-2.5">
                 <p className="text-xs font-medium text-muted-foreground">Приёмник</p>
                 <div className="grid grid-cols-2 gap-2">
-                  <NumField label="Мощность, дБм (Rx-часть)" value={eq.receiver.powerDbm} onChange={(v) => setEquipment({ receiver: { ...eq.receiver, powerDbm: v } })} step={1} />
+                  <NumField label="Мощность передатчика (обратная линия), дБм" value={eq.receiver.powerDbm} onChange={(v) => setEquipment({ receiver: { ...eq.receiver, powerDbm: v } })} step={1} />
                   <NumField label="Чувствительность, дБм (dBm)" value={eq.receiver.sensitivityDbm} onChange={(v) => setEquipment({ receiver: { ...eq.receiver, sensitivityDbm: v } })} step={1} />
                   {detailed && (
                     <>
@@ -334,8 +334,10 @@ export function EquipmentPanel() {
             Высота антенны каждой станции задаётся в её карточке. В упрощённом режиме: усиления антенн,
             мощность передатчика и чувствительность приёмника. В подробном добавляются ширина луча,
             боковые лепестки, рассогласование, КСВН (VSWR), фидеры, полоса шума, коэффициент шума (NF)
-            и модуляция. Общие условия линии (частота, климатическая зона, рефракция, атмосферные потери) —
-            в карточке «Условия распространения».
+            и модуляция. Общие условия линии (частоты передатчиков, климатическая зона, рефракция,
+            атмосферные потери) — в карточке «Условия распространения». Обратная линия (подвижный Tx →
+            наземный Rx) использует мощность передатчика подвижной станции и чувствительность приёмника
+            наземной станции.
           </p>
         </CardContent>
       </Card>

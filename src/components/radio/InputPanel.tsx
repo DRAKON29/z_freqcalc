@@ -218,62 +218,84 @@ export function InputPanel() {
           <CardTitle className="text-base">Условия распространения</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {/* Режим частоты: одна / диапазон */}
-          <div className="flex items-center justify-between rounded-lg border p-2.5">
-            <div className="flex items-center gap-2 text-sm">
-              <span className={s.frequencyMode === 'single' ? 'font-medium' : 'text-muted-foreground'}>Одна частота</span>
-              <Switch
-                checked={s.frequencyMode === 'range'}
-                onCheckedChange={(v) => s.setField('frequencyMode', v ? 'range' : 'single')}
-                aria-label="Переключатель режима частоты"
-              />
-              <span className={s.frequencyMode === 'range' ? 'font-medium' : 'text-muted-foreground'}>
-                Диапазон частот
-              </span>
-            </div>
-            {s.frequencyMode === 'range' && (
-              <Badge variant="secondary" className="text-[10px]">до 12 точек</Badge>
-            )}
-          </div>
+          {/* Частоты передатчиков станций */}
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2 rounded-lg border p-2.5">
+              <p className="text-xs font-semibold text-emerald-700">Наземный (Tx) — прямая линия</p>
+              {/* Режим частоты: одна / диапазон */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className={s.frequencyMode === 'single' ? 'font-medium' : 'text-muted-foreground'}>Одна частота</span>
+                  <Switch
+                    checked={s.frequencyMode === 'range'}
+                    onCheckedChange={(v) => s.setField('frequencyMode', v ? 'range' : 'single')}
+                    aria-label="Переключатель режима частоты"
+                  />
+                  <span className={s.frequencyMode === 'range' ? 'font-medium' : 'text-muted-foreground'}>
+                    Диапазон
+                  </span>
+                </div>
+                {s.frequencyMode === 'range' && (
+                  <Badge variant="secondary" className="text-[10px]">до 12 точек</Badge>
+                )}
+              </div>
 
-          {s.frequencyMode === 'single' ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs">Частота, МГц ({LIMITS.frequencyMinMhz}–{LIMITS.frequencyMaxMhz})</Label>
-                <Input
-                  type="number"
-                  min={LIMITS.frequencyMinMhz}
-                  max={LIMITS.frequencyMaxMhz}
-                  value={s.frequencyMhz}
-                  onChange={(e) => s.setField('frequencyMhz', Number(e.target.value))}
-                />
-              </div>
-              <div />
+              {s.frequencyMode === 'single' ? (
+                <div>
+                  <Label className="text-xs">Частота передатчика, МГц ({LIMITS.frequencyMinMhz}–{LIMITS.frequencyMaxMhz})</Label>
+                  <Input
+                    type="number"
+                    min={LIMITS.frequencyMinMhz}
+                    max={LIMITS.frequencyMaxMhz}
+                    value={s.frequencyMhz}
+                    onChange={(e) => s.setField('frequencyMhz', Number(e.target.value))}
+                  />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs">Частота от, МГц</Label>
+                    <Input
+                      type="number"
+                      min={LIMITS.frequencyMinMhz}
+                      max={LIMITS.frequencyMaxMhz}
+                      value={s.freqFromMhz}
+                      onChange={(e) => s.setField('freqFromMhz', Number(e.target.value))}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Частота до, МГц</Label>
+                    <Input
+                      type="number"
+                      min={LIMITS.frequencyMinMhz}
+                      max={LIMITS.frequencyMaxMhz}
+                      value={s.freqToMhz}
+                      onChange={(e) => s.setField('freqToMhz', Number(e.target.value))}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-3">
+
+            <div className="space-y-2 rounded-lg border p-2.5">
+              <p className="text-xs font-semibold text-amber-700">Подвижный (Tx) — обратная линия</p>
               <div>
-                <Label className="text-xs">Частота от, МГц</Label>
+                <Label className="text-xs">Частота передатчика, МГц ({LIMITS.frequencyMinMhz}–{LIMITS.frequencyMaxMhz})</Label>
                 <Input
                   type="number"
                   min={LIMITS.frequencyMinMhz}
                   max={LIMITS.frequencyMaxMhz}
-                  value={s.freqFromMhz}
-                  onChange={(e) => s.setField('freqFromMhz', Number(e.target.value))}
+                  value={s.mobileFrequencyMhz}
+                  onChange={(e) => s.setField('mobileFrequencyMhz', Number(e.target.value))}
                 />
               </div>
-              <div>
-                <Label className="text-xs">Частота до, МГц</Label>
-                <Input
-                  type="number"
-                  min={LIMITS.frequencyMinMhz}
-                  max={LIMITS.frequencyMaxMhz}
-                  value={s.freqToMhz}
-                  onChange={(e) => s.setField('freqToMhz', Number(e.target.value))}
-                />
-              </div>
+              {s.frequencyMode === 'range' && (
+                <p className="text-[11px] text-muted-foreground">
+                  В режиме диапазона обратная линия не рассчитывается.
+                </p>
+              )}
             </div>
-          )}
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>

@@ -24,6 +24,7 @@ import { buildProfile, createHgtDem, createSyntheticDem, makeClutterSampler, par
 import { distanceM, bearingDeg, wgs84ToSk42, sk42ToWgs84 } from '@/lib/radio/coordinates'
 import { getDeviceId, saveHistory, syncEntry } from '@/lib/radio/history'
 import { calculationInputSchema, dynamicParamsSchema } from '@/lib/radio/validation'
+import { LIMITS } from '@/lib/radio/constants'
 
 export const DEFAULT_EQUIPMENT: EquipmentParams = {
   mode: 'simple',
@@ -93,6 +94,8 @@ export interface RadioState {
   pointA: LatLon
   pointB: LatLon
   frequencyMhz: number
+  /** Частота передатчика подвижной станции (обратная линия) */
+  mobileFrequencyMhz: number
   frequencyMode: 'single' | 'range'
   freqFromMhz: number
   freqToMhz: number
@@ -116,6 +119,10 @@ export interface RadioState {
   calculating: boolean
   result: PropagationResult | null
   budget: LinkBudget | null
+  /** Обратная линия: подвижный Tx → наземный Rx (только режим «одна частота») */
+  reverseResult: PropagationResult | null
+  reverseBudget: LinkBudget | null
+  reverseInput: CalculationInput | null
   rangeResults: RangeFreqResult[] | null
   lastInput: CalculationInput | null
   lastError: string | null
@@ -154,6 +161,7 @@ export const useRadioStore = create<RadioState>((set, get) => ({
   pointA: MOSCOW_A,
   pointB: MOSCOW_B,
   frequencyMhz: 2400,
+  mobileFrequencyMhz: 2400,
   frequencyMode: 'single',
   freqFromMhz: 2400,
   freqToMhz: 2480,
@@ -175,6 +183,9 @@ export const useRadioStore = create<RadioState>((set, get) => ({
   calculating: false,
   result: null,
   budget: null,
+  reverseResult: null,
+  reverseBudget: null,
+  reverseInput: null,
   rangeResults: null,
   lastInput: null,
   lastError: null,
@@ -320,6 +331,9 @@ export const useRadioStore = create<RadioState>((set, get) => ({
         set({
           result: mainProp,
           budget: mainBudget,
+          reverseResult: null,
+          reverseBudget: null,
+          reverseInput: null,
           rangeResults,
           lastInput: mainInput,
           calculating: false,
@@ -355,9 +369,41 @@ export const useRadioStore = create<RadioState>((set, get) => ({
       const prop = await model.calculate(input)
       const budget = computeLinkBudget(input, s.equipment, prop)
 
+      // Обратная линия: подвижный Tx → наземный Rx на частоте подвижного передатчика.
+      // Параметры приёмника (NF, полоса, модуляция) общие — одна радиосистема.
+      let reverseResult: PropagationResult | null = null
+      let reverseBudget: LinkBudget | null = null
+      let reverseInput: CalculationInput | null = null
+      const mf = s.mobileFrequencyMhz
+      if (
+        mf >= LIMITS.frequencyMinMhz &&
+        mf <= LIMITS.frequencyMaxMhz &&
+        Math.abs(mf - input.frequencyMhz) > 1e-9
+      ) {
+        const revInput: CalculationInput = { ...input, frequencyMhz: mf }
+        const revParsed = calculationInputSchema.safeParse(revInput)
+        if (revParsed.success) {
+          const revProp = await model.calculate(revInput)
+          const revEquipment: EquipmentParams = {
+            mode: s.equipment.mode,
+            // передаёт подвижная станция: её антенна и мощность
+            tx: s.equipment.rx,
+            rx: s.equipment.tx,
+            transmitter: { ...s.equipment.transmitter, powerDbm: s.equipment.receiver.powerDbm },
+            receiver: { ...s.equipment.receiver, sensitivityDbm: s.equipment.transmitter.sensitivityDbm },
+          }
+          reverseResult = revProp
+          reverseBudget = computeLinkBudget(revInput, revEquipment, revProp)
+          reverseInput = revInput
+        }
+      }
+
       set({
         result: prop,
         budget,
+        reverseResult,
+        reverseBudget,
+        reverseInput,
         rangeResults: null,
         lastInput: input,
         calculating: false,
@@ -433,7 +479,7 @@ export const useRadioStore = create<RadioState>((set, get) => ({
     })
   },
 
-  resetResults: () => set({ result: null, budget: null, rangeResults: null, dynamics: null, dynamicsAll: [], lastError: null }),
+  resetResults: () => set({ result: null, budget: null, reverseResult: null, reverseBudget: null, reverseInput: null, rangeResults: null, dynamics: null, dynamicsAll: [], lastError: null }),
 }))
 
 /** СК-42 для точки (для отображения в UI). */

@@ -34,7 +34,7 @@ import { AlertTriangle, Download, FileJson, FileSpreadsheet } from 'lucide-react
 
 export function ResultsPanel() {
   const s = useRadioStore()
-  const { result, budget, lastInput, rangeResults, terrainWarning } = s
+  const { result, budget, lastInput, rangeResults, reverseResult, reverseBudget, reverseInput, mobileFrequencyMhz, frequencyMode, terrainWarning } = s
 
   const profileData = useMemo(() => {
     if (!lastInput) return []
@@ -214,6 +214,111 @@ export function ResultsPanel() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Обратная линия: подвижный Tx → наземный Rx */}
+      {reverseBudget && reverseResult && reverseInput ? (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex flex-wrap items-center justify-between gap-2">
+              Обратная линия: подвижный Tx → наземный Rx
+              <Badge variant="outline" className="font-mono">
+                {reverseInput.frequencyMhz.toFixed(0)} МГц · {reverseResult.engineUsed}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-4">
+              <Card>
+                <CardContent className="pt-4">
+                  <p className="text-xs text-muted-foreground">Медианные потери</p>
+                  <p className="text-xl font-semibold">{reverseResult.medianLossDb.toFixed(1)} <span className="text-sm">дБ</span></p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4">
+                  <p className="text-xs text-muted-foreground">P_rx (наземный)</p>
+                  <p className="text-xl font-semibold">{reverseBudget.prxDbm.toFixed(1)} <span className="text-sm">дБм</span></p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4">
+                  <p className="text-xs text-muted-foreground">SNR</p>
+                  <p className="text-xl font-semibold">{reverseBudget.snrDb.toFixed(1)} <span className="text-sm">дБ</span></p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4">
+                  <p className="text-xs text-muted-foreground">Запас на линию</p>
+                  <p className={`text-xl font-semibold ${reverseBudget.linkMarginDb < 0 ? 'text-destructive' : 'text-emerald-600'}`}>
+                    {reverseBudget.linkMarginDb.toFixed(1)} <span className="text-sm">дБ</span>
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+            {reverseBudget.linkMarginDb < 0 && (
+              <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+                <p className="text-sm text-destructive font-medium">
+                  Обратная линия не обеспечивается (SNR ниже требуемого Eb/N₀ на {Math.abs(reverseBudget.linkMarginDb).toFixed(1)} дБ).
+                </p>
+              </div>
+            )}
+            <CardContent className="grid gap-4 md:grid-cols-2 p-0">
+              <div>
+                <p className="text-sm font-medium mb-2">Приход</p>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Параметр</TableHead>
+                      <TableHead className="text-right">Значение</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {reverseBudget.income.map((r, i) => (
+                      <TableRow key={i} className={r.sign === '=' ? 'bg-muted/50 font-medium' : ''}>
+                        <TableCell>{r.label}</TableCell>
+                        <TableCell className="text-right font-mono">
+                          {r.value.toFixed(1)} {r.unit}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div>
+                <p className="text-sm font-medium mb-2">Расход</p>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Параметр</TableHead>
+                      <TableHead className="text-right">Значение</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {reverseBudget.expense.map((r, i) => (
+                      <TableRow key={i} className={r.sign === '=' ? 'bg-muted/50 font-medium' : ''}>
+                        <TableCell>{r.label}</TableCell>
+                        <TableCell className="text-right font-mono">
+                          {r.value.toFixed(1)} {r.unit}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </CardContent>
+        </Card>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Обратная линия не рассчитана:{' '}
+          {frequencyMode === 'range'
+            ? 'в режиме диапазона частот выполняется развёртка только для прямой линии.'
+            : mobileFrequencyMhz < 500 || mobileFrequencyMhz > 7000
+              ? 'частота подвижного передатчика вне диапазона 500–7000 МГц.'
+              : 'частота подвижного передатчика совпадает с частотой наземного.'}
+        </p>
+      )}
 
       {/* Профиль трассы */}
       <Card>
