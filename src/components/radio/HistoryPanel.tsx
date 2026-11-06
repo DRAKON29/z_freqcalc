@@ -13,7 +13,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { getDeviceId, listHistory, clearHistory, syncPending, fetchServerHistory } from '@/lib/radio/history'
 import { download, toJson, historyToCsv } from '@/lib/radio/export'
 import { historyEntriesToPdfBlob } from '@/lib/radio/pdf'
@@ -154,9 +153,11 @@ export function HistoryPanel() {
           </div>
           {syncInfo && <p className="text-xs text-muted-foreground">{syncInfo}</p>}
 
-          <ScrollArea className="max-h-[420px]">
+          {/* Нативная прокрутка: Radix ScrollArea с max-h не ограничивает высоту —
+              таблица вылезала за карточку (см. баг-репорт). */}
+          <div className="max-h-[420px] overflow-auto rounded-md border">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10 bg-background">
                 <TableRow>
                   <TableHead>Дата</TableHead>
                   <TableHead>Название</TableHead>
@@ -227,7 +228,7 @@ export function HistoryPanel() {
                 ))}
               </TableBody>
             </Table>
-          </ScrollArea>
+          </div>
 
           <div className="flex flex-wrap gap-2">
             <Button
