@@ -53,3 +53,4 @@ prompt
 server.log
 # Skills directory
 /skills/
+__pycache__/
