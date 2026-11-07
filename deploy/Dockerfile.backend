@@ -3,8 +3,10 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# fastapi + uvicorn; опционально py2001 (если доступен в индексе) и GDAL для SXF
-RUN pip install --no-cache-dir fastapi uvicorn[standard] pillow
+# Зависимости — из зафиксированного requirements.txt (без него python-multipart
+# терялся и сервис падал на Form-эндпоинтах); pillow — для .hgt/превью
+COPY mini-services/radio-service/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt pillow
 
 # Код сервиса
 COPY mini-services/radio-service/main.py .
