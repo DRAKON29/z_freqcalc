@@ -170,3 +170,52 @@ jobs:
           tags: ${{ steps.meta_frontend.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    name: деплой на сервер (pull проверенных образов + health-check)
+    runs-on: [self-hosted, prod]
+    needs: [publish]
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Логин в ghcr.io (токен запуска)
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: Сохранить текущие образы для отката
+        run: |
+          docker image inspect ghcr.io/${{ github.repository }}-backend:latest >/dev/null 2>&1 && \
+            docker tag ghcr.io/${{ github.repository }}-backend:latest ghcr.io/${{ github.repository }}-backend:prev || true
+          docker image inspect ghcr.io/${{ github.repository }}-frontend:latest >/dev/null 2>&1 && \
+            docker tag ghcr.io/${{ github.repository }}-frontend:latest ghcr.io/${{ github.repository }}-frontend:prev || true
+      - name: Обновить код (compose-файл и прочие деплой-артефакты)
+        run: |
+          cd /opt/z_freqcalc
+          git fetch origin dev_
+          git checkout -f -B deploy origin/dev_
+      - name: Pull образов
+        run: docker compose -f /opt/z_freqcalc/deploy/docker-compose.yml pull
+      - name: Применить новую версию
+        run: docker compose -f /opt/z_freqcalc/deploy/docker-compose.yml up -d
+      - name: Health-check
+        id: health
+        run: |
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8000/api/health >/dev/null && curl -sf -o /dev/null http://127.0.0.1:3000; then
+              ok=1; echo "healthy after ${i} попытки"; break
+            fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then echo "healthy=false" >> "$GITHUB_OUTPUT"; exit 1; fi
+          echo "healthy=true" >> "$GITHUB_OUTPUT"
+      - name: Откат на предыдущие образы при провале
+        if: failure() && steps.health.outputs.healthy == 'false'
+        run: |
+          echo "Health-check не прошёл — откат на :prev"
+          docker tag ghcr.io/${{ github.repository }}-backend:prev ghcr.io/${{ github.repository }}-backend:latest || true
+          docker tag ghcr.io/${{ github.repository }}-frontend:prev ghcr.io/${{ github.repository }}-frontend:latest || true
+          docker compose -f /opt/z_freqcalc/deploy/docker-compose.yml up -d
+      - name: Статус
+        run: |
+          docker ps --format '{{.Names}}: {{.Status}}'
+          curl -s http://127.0.0.1:8000/api/health
