@@ -9,7 +9,8 @@
 import { C_LIGHT, MODULATIONS } from './constants'
 import { destination, bearingDeg, distanceM } from './coordinates'
 import { fsplDb } from './fspl'
-import type { CalculationInput, DynamicParams, DynamicSample, DynamicsResult } from './types'
+import { routeStateAt, routeDurationS } from './route'
+import type { CalculationInput, DynamicParams, DynamicSample, DynamicsResult, RouteData } from './types'
 
 /** Допустимый доплеровский сдвиг для модуляции (доля от символьной скорости).
  *  Символьная скорость ≈ шумовая полоса (Nyquist). За пределом — деградация демодуляции. */
@@ -42,7 +43,9 @@ function elevationAngleDeg(hTx: number, hAirM: number, dGroundM: number): number
 
 /**
  * Расчёт динамики: объект стартует в точке A (над Tx) и движется по азимуту
- * траектории с постоянной скоростью на постоянной высоте.
+ * траектории с постоянной скоростью на постоянной высоте. При заданном route
+ * движение — по ломаной из файла траектории: позиция, высота и скорость
+ * меняются по участкам (смотр. route.ts).
  */
 export function simulateDynamics(
   input: CalculationInput,
@@ -56,17 +59,26 @@ export function simulateDynamics(
     noiseFigureDb: number
     modulation: keyof typeof MODULATIONS
   },
+  route?: RouteData | null,
 ): DynamicsResult {
   const freqMhz = input.frequencyMhz
   const speedMs = params.speedKmh / 3.6
   const warnings: string[] = []
 
-  if (params.speedKmh < 100 || params.speedKmh > 200) {
+  if (route) {
+    const speeds = route.points.map((p) => p.speedKmh)
+    const vMin = Math.min(...speeds)
+    const vMax = Math.max(...speeds)
+    if (vMin < 100 || vMax > 200) {
+      warnings.push(`Путевые скорости точек маршрута ${vMin}–${vMax} км/ч вне диапазона 100–200 км/ч`)
+    }
+  } else if (params.speedKmh < 100 || params.speedKmh > 200) {
     warnings.push(`Путевая скорость ${params.speedKmh} км/ч вне диапазона 100–200 км/ч`)
   }
 
-  const nSteps = Math.min(600, Math.max(60, params.durationS))
-  const dt = params.durationS / nSteps
+  const durationS = route ? routeDurationS(route) : params.durationS
+  const nSteps = Math.round(Math.min(600, Math.max(60, durationS)))
+  const dt = durationS / nSteps
   const tx = input.path.points[0]
   const txTotalH = (input.path.profile[0]?.elev ?? 0) + input.txHeightM
 
@@ -77,15 +89,39 @@ export function simulateDynamics(
 
   for (let i = 0; i <= nSteps; i++) {
     const t = i * dt
-    const dGround = speedMs * t
-    const pos = destination(tx, dGround, params.trajectoryAzimuthDeg)
+    let pos: { lat: number; lon: number }
+    let altM: number
+    let vMs: number
+    let vKmh: number
+    let dhDtMs: number
+    let dGroundDtMs: number
+    if (route) {
+      const st = routeStateAt(route, t)
+      pos = st.pos
+      altM = st.altitudeM
+      vMs = st.speedMs
+      vKmh = st.speedKmh
+      dhDtMs = st.dhDtMs
+      // Скорость удаления от Tx: проекция вектора скорости на направление Tx→объект
+      const toPosAz = bearingDeg(tx, pos)
+      dGroundDtMs = vMs * Math.cos(((st.courseDeg - toPosAz) * Math.PI) / 180)
+    } else {
+      pos = destination(tx, speedMs * t, params.trajectoryAzimuthDeg)
+      altM = params.altitudeM
+      vMs = speedMs
+      vKmh = params.speedKmh
+      dhDtMs = 0
+      dGroundDtMs = speedMs
+    }
+    const dGround = distanceM(tx, pos)
+    const dh = altM - txTotalH
 
-    const slantM = Math.hypot(dGround, params.altitudeM - txTotalH)
-    const elevDeg = elevationAngleDeg(txTotalH, params.altitudeM, dGround)
+    const slantM = Math.hypot(dGround, dh)
+    const elevDeg = elevationAngleDeg(txTotalH, altM, dGround)
 
     // Радиальная скорость — производная наклонной дальности (аналитически):
-    // slant = √(d² + Δh²) → d(slant)/dt = d · v / slant
-    const radialMs = slantM > 0 ? (speedMs * dGround) / slantM : 0
+    // slant = √(d² + Δh²) → d(slant)/dt = (d·ḋ + Δh·Δḣ) / slant
+    const radialMs = slantM > 0 ? (dGround * dGroundDtMs + dh * dhDtMs) / slantM : 0
 
     // Доплер: Δf = (v_r / c) · f
     const dopplerHz = (radialMs / C_LIGHT) * (freqMhz * 1e6)
@@ -115,6 +151,7 @@ export function simulateDynamics(
       linkMarginDb: marginDb,
       dopplerLossDb: dopLoss,
       inZone,
+      ...(route ? { altitudeM: altM, speedKmh: vKmh } : {}),
     })
 
     maxDopplerHz = Math.max(maxDopplerHz, Math.abs(dopplerHz))
@@ -123,7 +160,12 @@ export function simulateDynamics(
   }
 
   if (exitTimeS !== null) {
-    warnings.push(`Объект выходит из зоны связи через ${exitTimeS.toFixed(0)} с (путь ${((exitTimeS * speedMs) / 1000).toFixed(1)} км)`)
+    const pathKm = route ? null : (exitTimeS * speedMs) / 1000
+    warnings.push(
+      pathKm !== null
+        ? `Объект выходит из зоны связи через ${exitTimeS.toFixed(0)} с (путь ${pathKm.toFixed(1)} км)`
+        : `Объект выходит из зоны связи через ${exitTimeS.toFixed(0)} с`,
+    )
   }
   if (maxDopplerHz > dopplerToleranceHz(opts.noiseBandwidthHz, opts.modulation)) {
     warnings.push(
@@ -134,8 +176,15 @@ export function simulateDynamics(
   return { samples, maxDopplerHz, minMarginDb, exitTimeS, warnings }
 }
 
-/** Траектория объекта на карте: точки по азимуту. */
-export function trajectoryPoints(tx: { lat: number; lon: number }, params: DynamicParams): { lat: number; lon: number }[] {
+/** Траектория объекта на карте: точки маршрута из файла либо линия по азимуту. */
+export function trajectoryPoints(
+  tx: { lat: number; lon: number },
+  params: DynamicParams,
+  route?: RouteData | null,
+): { lat: number; lon: number }[] {
+  if (route) {
+    return route.points.map((p) => ({ lat: p.lat, lon: p.lon }))
+  }
   const speedMs = params.speedKmh / 3.6
   const n = 40
   const pts: { lat: number; lon: number }[] = []

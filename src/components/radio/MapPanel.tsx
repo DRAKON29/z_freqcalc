@@ -11,6 +11,7 @@ import type * as LType from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useRadioStore } from '@/store/radio-store'
 import { zoneRadiusM, trajectoryPoints } from '@/lib/radio/doppler'
+import { routeStateAt, routeDurationS } from '@/lib/radio/route'
 import { tileBounds } from '@/lib/radio/terrain'
 import { FPS_THRESHOLD } from '@/lib/radio/constants'
 import { Button } from '@/components/ui/button'
@@ -67,6 +68,7 @@ export function MapPanel() {
   const frequencyMhz = useRadioStore((s) => s.frequencyMhz)
   const dynamics = useRadioStore((s) => s.dynamics)
   const dynamicsParams = useRadioStore((s) => s.dynamicsParams)
+  const route = useRadioStore((s) => s.route)
   const hgtTiles = useRadioStore((s) => s.hgtTiles)
   const animationAllowed = useRadioStore((s) => s.animationAllowed)
   const fpsMeasured = useRadioStore((s) => s.fpsMeasured)
@@ -173,7 +175,9 @@ export function MapPanel() {
     // Обе точки всегда в кадре при изменении трассы (загрузка из истории,
     // ввод координат, клик по карте). Зум карты не фиксируется: maxZoom
     // ограничивает только автоподгонку, дальше карта зумится свободно.
-    map.fitBounds(lineRef.current.getBounds(), { padding: [50, 50], maxZoom: 15 })
+    // animate: false — иначе отложенная zoom-анимация перебивает последующий
+    // fitBounds траектории (эффект ниже) при перемонтировании вкладки.
+    map.fitBounds(lineRef.current.getBounds(), { padding: [50, 50], maxZoom: 15, animate: false })
   }, [pointA, pointB, L])
 
   // Зона связи
@@ -200,17 +204,17 @@ export function MapPanel() {
     }).addTo(map)
   }, [result, budget, equipment, frequencyMhz, pointA, L])
 
-  // Траектория объекта
+  // Траектория объекта: полилиния маршрута из файла либо линия по азимуту
   useEffect(() => {
     const leaflet = LRef.current
     const map = mapRef.current
     if (!leaflet || !map) return
     trajRef.current?.remove()
     if (!dynamics) return
-    const pts = trajectoryPoints(pointA, dynamicsParams).map((p) => [p.lat, p.lon] as [number, number])
+    const pts = trajectoryPoints(pointA, dynamicsParams, route).map((p) => [p.lat, p.lon] as [number, number])
     trajRef.current = leaflet.polyline(pts, { color: '#dc2626', weight: 2 }).addTo(map)
-    map.fitBounds(trajRef.current.getBounds().extend(lineRef.current!.getBounds()), { padding: [30, 30] })
-  }, [dynamics, dynamicsParams, pointA, L])
+    map.fitBounds(trajRef.current.getBounds().extend(lineRef.current!.getBounds()), { padding: [30, 30], animate: false })
+  }, [dynamics, dynamicsParams, pointA, route, L])
 
   // Анимация траектории с измерением FPS
   useEffect(() => {
@@ -229,7 +233,7 @@ export function MapPanel() {
 
     const speedMs = dynamicsParams.speedKmh / 3.6
     const az = dynamicsParams.trajectoryAzimuthDeg
-    const duration = dynamicsParams.durationS
+    const duration = route ? routeDurationS(route) : dynamicsParams.durationS
     const frames: number[] = []
     let lastT = performance.now()
     const start = performance.now()
@@ -253,14 +257,25 @@ export function MapPanel() {
         }
       }
 
-      const t = ((now / 1000) % duration)
-      const d = speedMs * t
-      const rad = (az * Math.PI) / 180
-      const dLat = (d * Math.cos(rad)) / 111_320
-      const dLon = (d * Math.sin(rad)) / (111_320 * Math.cos((pointA.lat * Math.PI) / 180))
+      let lat: number
+      let lon: number
+      if (route) {
+        // Позиция вдоль ломаной маршрута в момент времени цикла
+        const st = routeStateAt(route, (now / 1000) % duration)
+        lat = st.pos.lat
+        lon = st.pos.lon
+      } else {
+        const t = ((now / 1000) % duration)
+        const d = speedMs * t
+        const rad = (az * Math.PI) / 180
+        const dLat = (d * Math.cos(rad)) / 111_320
+        const dLon = (d * Math.sin(rad)) / (111_320 * Math.cos((pointA.lat * Math.PI) / 180))
+        lat = pointA.lat + dLat
+        lon = pointA.lon + dLon
+      }
       if (!animMarkerRef.current) {
         animMarkerRef.current = leaflet
-          .marker([pointA.lat + dLat, pointA.lon + dLon], {
+          .marker([lat, lon], {
             icon: leaflet.divIcon({
               html: '<div style="font-size:20px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))">✈</div>',
               className: '',
@@ -270,7 +285,7 @@ export function MapPanel() {
           })
           .addTo(map)
       } else {
-        animMarkerRef.current.setLatLng([pointA.lat + dLat, pointA.lon + dLon])
+        animMarkerRef.current.setLatLng([lat, lon])
       }
       rafRef.current = requestAnimationFrame(tick)
     }
@@ -280,7 +295,7 @@ export function MapPanel() {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
       rafRef.current = null
     }
-  }, [dynamics, animationAllowed, dynamicsParams, pointA, L, setField])
+  }, [dynamics, animationAllowed, dynamicsParams, pointA, route, L, setField])
 
   const styleBtn = (id: MapStyle, label: string) => (
     <Button

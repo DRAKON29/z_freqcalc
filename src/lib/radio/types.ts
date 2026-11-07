@@ -255,6 +255,25 @@ export interface DynamicParams {
   durationS: number
 }
 
+/** Точка траектории из файла маршрута. */
+export interface RouteWaypoint {
+  lat: number
+  lon: number
+  /** Высота полёта, м (абсолютная) */
+  altitudeM: number
+  /** Путевая скорость на участке от этой точки до следующей, км/ч */
+  speedKmh: number
+}
+
+/** Маршрут из файла траектории (первая и последняя точки — концы траектории). */
+export interface RouteData {
+  /** Имя файла-источника (для отображения) */
+  name?: string
+  points: RouteWaypoint[]
+  /** Высота антенны на штативе наземной станции, м */
+  tripodHeightM: number
+}
+
 export interface DynamicSample {
   t: number
   /** Угол места от точки A, град */
@@ -269,6 +288,10 @@ export interface DynamicSample {
   linkMarginDb: number
   dopplerLossDb: number
   inZone: boolean
+  /** Текущая высота полёта, м (маршрут из файла — переменная) */
+  altitudeM?: number
+  /** Текущая путевая скорость, км/ч (маршрут из файла — переменная) */
+  speedKmh?: number
 }
 
 export interface DynamicsResult {
@@ -279,6 +302,8 @@ export interface DynamicsResult {
   warnings: string[]
   /** Высота полёта, для которой выполнен расчёт (многовысотный режим) */
   altitudeM?: number
+  /** Подпись серии для легенд графиков (маршрут из файла) */
+  label?: string
 }
 
 /** Результат расчёта на одной частоте (режим «диапазон частот»). */

@@ -46,7 +46,7 @@ NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000/api bun run dev
 ## Верификация (регресс)
 
 ```bash
-bun test tests/          # 55 тестов TS-ядра — должны быть зелёными
+bun test tests/          # 72 теста TS-ядра — должны быть зелёными
 bun run lint             # eslint — чисто
 cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q   # 25 тестов формул
 ```
@@ -61,6 +61,17 @@ cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q
 Ветка разработки — **`dev_`** (не main; main = исходный клон). Remote: `origin`,
 тег `init_tag` стоит на `6b9ae47` (устарел относительно HEAD). Коммиты — conventional
 на русском, пушим в `dev_`.
+
+**Не закоммичено**: загрузка траектории из файла на вкладке «Динамика» —
+`src/lib/radio/route.ts` (парсер `parseRouteFile` + `routeStateAt`/`routeDurationS` с
+кэшем сегментов), `routeFileSchema` в validation.ts (минимум 4 точки, любое
+расширение файла), маршрутная ветка в `simulateDynamics`/`trajectoryPoints`
+(doppler.ts, 4-й аргумент `route?`), store (`route`, `loadRoute`, `clearRoute`;
+`tripodHeight` файла → `txHeightM`), UI-блок в DynamicsPanel, полилиния+анимация по
+маршруту в MapPanel, тесты `tests/route.test.ts` + фикстура `tests/fixtures/route-sample.rt`
+(72 теста). Попутный фикс гонки fitBounds в MapPanel: оба fitBounds (трасса и
+траектория) — `animate: false`, иначе отложенная zoom-анимация трассы при
+перемонтировании вкладки перебивала вид на маршрут.
 
 Реализовано в этой сессии (сверху вниз):
 - `32fab51` — режим частоты подвижного (свой переключатель «одна частота / диапазон»,
@@ -101,9 +112,11 @@ cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q
 2. **Обратная линия не попадает** в историю (IndexedDB/сервер), PDF-экспорт и
    JSON/CSV — там только прямая. Сами расчёты обратной линии в любой комбинации
    режимов частоты (одна/диапазон у каждой станции) работают с `32fab51`.
-3. **Динамика** (вкладка «Динамика», `doppler.ts`) считает только прямую линию; борт
+3. **Динамика**: маршрут из файла считает только прямую линию связи (Tx = точка A,
+   рельеф не учитывается — FSPL по наклонной дальности); борт в ручном режиме
    стартует над точкой A. runDynamics берёт параметры из equipment (tx-мощность,
-   rx-чувствительность), а не из стационарного расчёта.
+   rx-чувствительность), а не из стационарного расчёта; обратная линия в динамике
+   не считается. Маршрут не попадает в историю/PDF/экспорты.
 4. **P.528** не реализована (решение по ТЗ 9.3: подключать только если сравнительные
    тесты дадут >5% выигрыша; точка интеграции — пакет p528 в http-режиме).
 5. `MapPanel`/ResultsPanel не показывают обратную линию на карте/профиле (только сводка и бюджет).
@@ -135,6 +148,7 @@ cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q
 | `src/lib/radio/itu-grid.ts` | парсер/валидатор сеток ITU-R P.2001-6 (Table 3): 121×241, 161×321, 360×720, спецификации продуктов |
 | `src/lib/radio/itu-env.ts` | `ITU_PRODUCTS`, `ituEnvironmentAt()` — извлечение условий в точках трассы (билинейная интерполяция P.1144) |
 | `src/lib/radio/coverage.ts` + `src/components/radio/CoveragePanel.tsx` | круговая диаграмма зоны покрытия: граница связи по азимутам с учётом рельефа, канва с гипсометрией |
+| `src/lib/radio/route.ts` | файл траектории: `parseRouteFile` (JSON → zod), сегментация с кэшем (WeakMap), `routeStateAt(route, t)` — позиция/высота/скорость/вертикальная скорость в момент t, `routeDurationS` |
 | `mini-services/radio-service/main.py` | FastAPI: `/api/calculate`, `/api/maps/*`, `/api/clutter`, `/api/history`, `/api/dem`; валидация карт (`_looks_like_numeric_grid`) |
 | `mini-services/radio-service/p2001_lite.py` | P.2001-lite + бюджет (python) |
 | `src/components/radio/` | панели: Input, Equipment, Results, Dynamics, History, Maps, Map, Coverage, Pwa |

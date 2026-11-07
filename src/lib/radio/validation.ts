@@ -92,6 +92,25 @@ export const dynamicParamsSchema = z.object({
   durationS: z.number().min(10, 'Длительность от 10 с').max(3600, 'Длительность до 1 ч'),
 })
 
+/** Точка файла траектории: координаты, высота (м) и скорость (км/ч) на участке до следующей точки. */
+export const routeWaypointSchema = z.object({
+  lat: z.number().min(-90, 'Широта от −90°').max(90, 'Широта до 90°'),
+  lon: z.number().min(-180, 'Долгота от −180°').max(180, 'Долгота до 180°'),
+  altitude: z.number().min(0, 'Высота полёта от 0 м').max(20000, 'Высота полёта до 20 км'),
+  speed: z.number().positive('Скорость должна быть больше 0'),
+})
+
+/** Файл траектории: любое расширение, строго структура образца. Минимум 4 точки. */
+export const routeFileSchema = z.object({
+  route: z.object({
+    points: z
+      .array(routeWaypointSchema)
+      .min(4, 'В траектории минимум 4 точки')
+      .max(200, 'В траектории не более 200 точек'),
+  }),
+  tripodHeight: z.number().min(0, 'Высота штатива от 0 м').max(5000, 'Высота штатива до 5000 м'),
+})
+
 export function validate<T>(schema: z.ZodType<T>, data: unknown): { ok: true; data: T } | { ok: false; errors: string[] } {
   const r = schema.safeParse(data)
   if (r.success) return { ok: true, data: r.data }

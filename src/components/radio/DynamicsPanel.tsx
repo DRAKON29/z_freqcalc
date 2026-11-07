@@ -8,6 +8,7 @@
  * предупреждение при выходе из зоны связи, анимация при ≥ 24 FPS,
  * иначе интерактивные графики с tooltip.
  */
+import { useState } from 'react'
 import { useRadioStore } from '@/store/radio-store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -28,7 +29,8 @@ import {
 } from 'recharts'
 import { FPS_THRESHOLD, LIMITS } from '@/lib/radio/constants'
 import { bearingDeg, distanceM } from '@/lib/radio/coordinates'
-import { Play, Timer, Plane, Route, Plus, X } from 'lucide-react'
+import { routeDurationS } from '@/lib/radio/route'
+import { Play, Timer, Plane, Route, Plus, X, Upload } from 'lucide-react'
 
 const ALT_COLORS = ['#0f766e', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#65a30d', '#db2777', '#475569']
 
@@ -50,20 +52,31 @@ export function DynamicsPanel() {
   const altitudes = useRadioStore((s) => s.altitudes)
   const setAltitudes = useRadioStore((s) => s.setAltitudes)
   const applyFromTrack = useRadioStore((s) => s.applyDynamicsFromTrack)
+  const route = useRadioStore((s) => s.route)
+  const loadRoute = useRadioStore((s) => s.loadRoute)
+  const clearRoute = useRadioStore((s) => s.clearRoute)
   const pointA = useRadioStore((s) => s.pointA)
   const pointB = useRadioStore((s) => s.pointB)
   const lastError = useRadioStore((s) => s.lastError)
 
   const isMulti = altitudeMode === 'multi'
+  const [routeError, setRouteError] = useState<string | null>(null)
 
-  // Данные графиков: серии по высотам
-  const seriesNames = dynamicsAll.map((d) => `${d.altitudeM ?? dp.altitudeM} м`)
+  const uploadRoute = async (file: File) => {
+    const text = await file.text()
+    const res = loadRoute(file.name, text)
+    setRouteError(res.ok ? null : res.error ?? 'Ошибка загрузки файла траектории')
+  }
+
+  // Данные графиков: серии по высотам (маршрут — одна серия «По маршруту»)
+  const seriesName = (d: { label?: string; altitudeM?: number }) => d.label ?? `${d.altitudeM ?? dp.altitudeM} м`
+  const seriesNames = dynamicsAll.map(seriesName)
   const times = dynamicsAll[0]?.samples.map((s) => s.t) ?? []
   const chartData = times.map((t, i) => {
     const row: Record<string, number> = { t: +t.toFixed(1) }
     for (const d of dynamicsAll) {
       const sm = d.samples[i]
-      const name = `${d.altitudeM ?? dp.altitudeM} м`
+      const name = seriesName(d)
       if (sm) {
         row[`dop_${name}`] = +sm.dopplerHz.toFixed(0)
         row[`elev_${name}`] = +sm.elevationDeg.toFixed(2)
@@ -107,7 +120,84 @@ export function DynamicsPanel() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {/* Заполнение от трассы */}
+          {/* Маршрут из файла */}
+          <div className="rounded-lg border p-2.5 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex">
+                <Input
+                  type="file"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (f) void uploadRoute(f)
+                    e.target.value = ''
+                  }}
+                />
+                <Button size="sm" variant="outline" asChild>
+                  <span>
+                    <Upload className="h-4 w-4 mr-1" /> {route ? 'Заменить траекторию…' : 'Загрузить траекторию…'}
+                  </span>
+                </Button>
+              </label>
+              {route && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    clearRoute()
+                    setRouteError(null)
+                  }}
+                  title="Убрать маршрут и вернуться к ручным параметрам"
+                >
+                  <X className="h-4 w-4 mr-1" /> Убрать
+                </Button>
+              )}
+              <p className="text-xs text-muted-foreground flex-1 min-w-[220px]">
+                Файл траектории (расширение любое): JSON вида{' '}
+                <code className="text-[10px]">{`{route:{points:[{lat,lon,altitude,speed}]},tripodHeight}`}</code>; минимум 4
+                точки, первая и последняя — концы траектории; высота в м, скорость в км/ч.
+              </p>
+            </div>
+            {route && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-emerald-600 text-[10px]">Маршрут: {route.name ?? 'файл'}</Badge>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div className="rounded border bg-muted/30 px-2 py-1">
+                    <span className="text-muted-foreground">Точек:</span>{' '}
+                    <span className="font-medium">{route.points.length}</span>
+                  </div>
+                  <div className="rounded border bg-muted/30 px-2 py-1">
+                    <span className="text-muted-foreground">Длительность:</span>{' '}
+                    <span className="font-medium">{(routeDurationS(route) / 60).toFixed(1)} мин</span>
+                  </div>
+                  <div className="rounded border bg-muted/30 px-2 py-1">
+                    <span className="text-muted-foreground">Высота:</span>{' '}
+                    <span className="font-medium">
+                      {Math.min(...route.points.map((p) => p.altitudeM))}–{Math.max(...route.points.map((p) => p.altitudeM))} м
+                    </span>
+                  </div>
+                  <div className="rounded border bg-muted/30 px-2 py-1">
+                    <span className="text-muted-foreground">Скорость:</span>{' '}
+                    <span className="font-medium">
+                      {Math.min(...route.points.map((p) => p.speedKmh))}–{Math.max(...route.points.map((p) => p.speedKmh))} км/ч
+                    </span>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Первая и последняя точки маршрута перенесены в трассу A–Б (вкладка «Расчёт»), высота штатива из
+                  файла ({route.tripodHeightM} м) — к антенне наземной станции. Выполните расчёт на вкладке «Расчёт»
+                  для новой трассы. Высота и скорость полёта берутся из маршрута; длительность моделирования
+                  игнорируется.
+                </p>
+              </div>
+            )}
+            {routeError && <p className="text-xs text-destructive">{routeError}</p>}
+          </div>
+
+          {/* Заполнение от трассы (без маршрута из файла) */}
+          {!route && (
           <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-2.5">
             <Button
               size="sm"
@@ -124,8 +214,11 @@ export function DynamicsPanel() {
               <b>высота полёта</b> и <b>путевая скорость</b>.
             </p>
           </div>
+          )}
 
-          {/* Режим высот */}
+          {/* Режим высот и ручные параметры — без маршрута из файла */}
+          {!route && (
+          <>
           <div className="flex items-center justify-between rounded-lg border p-2.5">
             <div className="flex items-center gap-2 text-sm">
               <span className={!isMulti ? 'font-medium' : 'text-muted-foreground'}>Одна высота</span>
@@ -187,6 +280,8 @@ export function DynamicsPanel() {
               {num('Длительность моделирования, с', 'durationS', dp.durationS, (v) => setDp({ durationS: v }), 10, 3600)}
             </div>
           )}
+          </>
+          )}
 
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" onClick={runDynamics} disabled={!result}>
@@ -240,9 +335,9 @@ export function DynamicsPanel() {
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <p className="text-xs text-muted-foreground">Высот / точек</p>
+                <p className="text-xs text-muted-foreground">{route ? 'Точек' : 'Высот / точек'}</p>
                 <p className="text-xl font-semibold">
-                  {dynamicsAll.length} / {dynamics.samples.length}
+                  {route ? dynamics.samples.length : `${dynamicsAll.length} / ${dynamics.samples.length}`}
                 </p>
               </CardContent>
             </Card>
@@ -287,16 +382,16 @@ export function DynamicsPanel() {
 
           {dynamicsAll.flatMap((d) => d.warnings).length > 0 && (
             <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-1">
-              {dynamicsAll
-                .filter((d) => d.warnings.length > 0)
-                .map((d) =>
-                  d.warnings.map((w, i) => (
-                    <p key={`${d.altitudeM}-${i}`} className="text-sm text-amber-800 dark:text-amber-300">
-                      ⚠ {d.altitudeM ? `H = ${d.altitudeM} м: ` : ''}
-                      {w}
-                    </p>
-                  )),
-                )}
+                  {dynamicsAll
+                    .filter((d) => d.warnings.length > 0)
+                    .map((d) =>
+                      d.warnings.map((w, i) => (
+                        <p key={`${d.label ?? d.altitudeM}-${i}`} className="text-sm text-amber-800 dark:text-amber-300">
+                          ⚠ {d.label ? `${d.label}: ` : d.altitudeM ? `H = ${d.altitudeM} м: ` : ''}
+                          {w}
+                        </p>
+                      )),
+                    )}
             </div>
           )}
 
@@ -333,10 +428,10 @@ export function DynamicsPanel() {
                       />
                       {dynamicsAll.map((d, idx) => (
                         <Line
-                          key={`elev-${d.altitudeM}`}
+                          key={`elev-${seriesName(d)}`}
                           yAxisId="ang"
                           type="monotone"
-                          dataKey={`elev_${d.altitudeM} м`}
+                          dataKey={`elev_${seriesName(d)}`}
                           stroke={altColor(idx)}
                           dot={false}
                           isAnimationActive={false}
@@ -345,10 +440,10 @@ export function DynamicsPanel() {
                       ))}
                       {dynamicsAll.map((d, idx) => (
                         <Line
-                          key={`dop-${d.altitudeM}`}
+                          key={`dop-${seriesName(d)}`}
                           yAxisId="hz"
                           type="monotone"
-                          dataKey={`dop_${d.altitudeM} м`}
+                          dataKey={`dop_${seriesName(d)}`}
                           stroke={altColor(idx)}
                           dot={false}
                           isAnimationActive={false}
@@ -388,9 +483,9 @@ export function DynamicsPanel() {
                       />
                       {dynamicsAll.map((d, idx) => (
                         <Line
-                          key={`snr-${d.altitudeM}`}
+                          key={`snr-${seriesName(d)}`}
                           type="monotone"
-                          dataKey={`snr_${d.altitudeM} м`}
+                          dataKey={`snr_${seriesName(d)}`}
                           stroke={altColor(idx)}
                           dot={false}
                           isAnimationActive={false}
@@ -398,9 +493,9 @@ export function DynamicsPanel() {
                       ))}
                       {dynamicsAll.map((d, idx) => (
                         <Line
-                          key={`margin-${d.altitudeM}`}
+                          key={`margin-${seriesName(d)}`}
                           type="monotone"
-                          dataKey={`margin_${d.altitudeM} м`}
+                          dataKey={`margin_${seriesName(d)}`}
                           stroke={altColor(idx)}
                           dot={false}
                           isAnimationActive={false}
