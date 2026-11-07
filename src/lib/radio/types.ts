@@ -291,6 +291,21 @@ export interface RangeFreqResult {
 }
 
 /** История расчётов. */
+export interface HistoryLinkParams {
+  /**
+   * Снимок параметров линка на момент расчёта — для полного восстановления
+   * формы из истории (частотные режимы обеих станций и оборудование).
+   */
+  frequencyMode: 'single' | 'range'
+  freqFromMhz: number
+  freqToMhz: number
+  mobileFrequencyMhz: number
+  mobileFrequencyMode: 'single' | 'range'
+  mobileFreqFromMhz: number
+  mobileFreqToMhz: number
+  equipment: EquipmentParams
+}
+
 export interface HistoryEntry {
   id?: number
   deviceId: string
@@ -305,5 +320,7 @@ export interface HistoryEntry {
   linkMarginDb: number
   input: CalculationInput
   budget: LinkBudget
+  /** Снимок параметров линка для восстановления формы (в старых записях отсутствует). */
+  linkParams?: HistoryLinkParams
   synced: boolean
 }

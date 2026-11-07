@@ -169,6 +169,11 @@ export function MapPanel() {
         { color: '#0f766e', weight: 3, dashArray: '8 6' },
       )
       .addTo(map)
+
+    // Обе точки всегда в кадре при изменении трассы (загрузка из истории,
+    // ввод координат, клик по карте). Зум карты не фиксируется: maxZoom
+    // ограничивает только автоподгонку, дальше карта зумится свободно.
+    map.fitBounds(lineRef.current.getBounds(), { padding: [50, 50], maxZoom: 15 })
   }, [pointA, pointB, L])
 
   // Зона связи

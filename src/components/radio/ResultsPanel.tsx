@@ -30,8 +30,33 @@ import {
 import { earthBulgeM } from '@/lib/radio/fspl'
 import { fresnelRadiusM } from '@/lib/radio/fresnel'
 import { buildExportPayload, toJson, toCsv, download } from '@/lib/radio/export'
+import { linkStatus, type LinkStatus } from '@/lib/radio/budget'
 import { CoveragePanel } from '@/components/radio/CoveragePanel'
 import { AlertTriangle, Download, FileJson, FileSpreadsheet } from 'lucide-react'
+
+/** Цветовая дифференциация статуса связи: зелёный / жёлтый / красный. */
+const STATUS_META: Record<LinkStatus, { label: string; text: string; dot: string; border: string; bg: string; alert: string }> = {
+  stable: { label: 'Связь стабильна', text: 'text-emerald-600', dot: 'bg-emerald-600', border: 'border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30', bg: 'bg-emerald-50 dark:bg-emerald-950/30', alert: 'text-emerald-700' },
+  marginal: { label: 'Связь нестабильна', text: 'text-amber-600', dot: 'bg-amber-500', border: 'border-amber-300 bg-amber-50 dark:bg-amber-950/30', bg: 'bg-amber-50 dark:bg-amber-950/30', alert: 'text-amber-800 dark:text-amber-300' },
+  lost: { label: 'Связь отсутствует', text: 'text-destructive', dot: 'bg-destructive', border: 'border-destructive/50 bg-destructive/10', bg: 'bg-destructive/10', alert: 'text-destructive' },
+}
+
+/** Цвет значения запаса в таблицах по трёхуровневому статусу. */
+const marginCls = (marginDb: number): string => {
+  const st = linkStatus(marginDb)
+  return st === 'stable' ? 'text-emerald-600' : st === 'marginal' ? 'text-amber-600' : 'text-destructive'
+}
+
+/** Статусная плашка «Связь …» с цветной точкой. */
+function StatusChip({ status }: { status: LinkStatus }) {
+  const m = STATUS_META[status]
+  return (
+    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${m.border} ${m.text}`}>
+      <span className={`h-2.5 w-2.5 rounded-full ${m.dot}`} />
+      {m.label}
+    </span>
+  )
+}
 
 export function ResultsPanel() {
   const s = useRadioStore()
@@ -106,7 +131,8 @@ export function ResultsPanel() {
     download(`расчёт-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(payload), 'text/csv')
   }
 
-  const marginColor = budget.linkMarginDb < 0 ? 'bg-destructive' : 'bg-emerald-600'
+  const fwdStatus = linkStatus(budget.linkMarginDb, result)
+  const revStatus = reverseBudget ? linkStatus(reverseBudget.linkMarginDb, reverseResult ?? undefined) : null
 
   return (
     <div className="space-y-4">
@@ -130,6 +156,12 @@ export function ResultsPanel() {
       )}
 
       {/* Итоги */}
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusChip status={fwdStatus} />
+        <span className="text-xs text-muted-foreground">
+          прямая линия: наземный Tx → подвижный Rx
+        </span>
+      </div>
       <div className="grid gap-3 sm:grid-cols-4">
         <Card>
           <CardContent className="pt-4">
@@ -152,18 +184,20 @@ export function ResultsPanel() {
         <Card>
           <CardContent className="pt-4">
             <p className="text-xs text-muted-foreground">Запас на линию (link margin)</p>
-            <p className={`text-2xl font-semibold ${budget.linkMarginDb < 0 ? 'text-destructive' : 'text-emerald-600'}`}>
+            <p className={`text-2xl font-semibold ${STATUS_META[fwdStatus].text}`}>
               {budget.linkMarginDb.toFixed(1)} <span className="text-sm">дБ</span>
             </p>
           </CardContent>
         </Card>
       </div>
 
-      {budget.linkMarginDb < 0 && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 flex items-center gap-2">
-          <AlertTriangle className="h-5 w-5 text-destructive" />
-          <p className="text-sm text-destructive font-medium">
-            Запас на линию (link margin) &lt; 0: линия связи не обеспечивается (SNR ниже требуемого Eb/N₀ на {Math.abs(budget.linkMarginDb).toFixed(1)} дБ).
+      {fwdStatus !== 'stable' && (
+        <div className={`rounded-lg border p-3 flex items-center gap-2 ${STATUS_META[fwdStatus].border}`}>
+          <AlertTriangle className={`h-5 w-5 shrink-0 ${STATUS_META[fwdStatus].text}`} />
+          <p className={`text-sm font-medium ${STATUS_META[fwdStatus].alert}`}>
+            {fwdStatus === 'marginal'
+              ? 'Связь нестабильна: запас на линии на грани — возможны срывы при замираниях (SNR ниже требуемого Eb/N₀ на ' + Math.abs(budget.linkMarginDb).toFixed(1) + ' дБ).'
+              : 'Связь отсутствует: SNR ниже требуемого Eb/N₀ на ' + Math.abs(budget.linkMarginDb).toFixed(1) + ' дБ.'}
           </p>
         </div>
       )}
@@ -299,6 +333,7 @@ export function ResultsPanel() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            <StatusChip status={revStatus!} />
             <div className="grid gap-3 sm:grid-cols-4">
               <Card>
                 <CardContent className="pt-4">
@@ -321,17 +356,19 @@ export function ResultsPanel() {
               <Card>
                 <CardContent className="pt-4">
                   <p className="text-xs text-muted-foreground">Запас на линию</p>
-                  <p className={`text-xl font-semibold ${reverseBudget.linkMarginDb < 0 ? 'text-destructive' : 'text-emerald-600'}`}>
+                  <p className={`text-xl font-semibold ${STATUS_META[revStatus!].text}`}>
                     {reverseBudget.linkMarginDb.toFixed(1)} <span className="text-sm">дБ</span>
                   </p>
                 </CardContent>
               </Card>
             </div>
-            {reverseBudget.linkMarginDb < 0 && (
-              <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-destructive" />
-                <p className="text-sm text-destructive font-medium">
-                  Обратная линия не обеспечивается (SNR ниже требуемого Eb/N₀ на {Math.abs(reverseBudget.linkMarginDb).toFixed(1)} дБ).
+            {revStatus !== 'stable' && (
+              <div className={`rounded-lg border p-3 flex items-center gap-2 ${STATUS_META[revStatus!].border}`}>
+                <AlertTriangle className={`h-5 w-5 shrink-0 ${STATUS_META[revStatus!].text}`} />
+                <p className={`text-sm font-medium ${STATUS_META[revStatus!].alert}`}>
+                  {revStatus === 'marginal'
+                    ? 'Обратная линия нестабильна: запас на грани — возможны срывы при замираниях (SNR ниже требуемого Eb/N₀ на ' + Math.abs(reverseBudget.linkMarginDb).toFixed(1) + ' дБ).'
+                    : 'Обратная линия отсутствует (SNR ниже требуемого Eb/N₀ на ' + Math.abs(reverseBudget.linkMarginDb).toFixed(1) + ' дБ).'}
                 </p>
               </div>
             )}
@@ -437,7 +474,7 @@ export function ResultsPanel() {
                     <TableCell className="text-right font-mono">{r.medianLossDb.toFixed(1)}</TableCell>
                     <TableCell className="text-right font-mono">{r.prxDbm.toFixed(1)}</TableCell>
                     <TableCell className="text-right font-mono">{r.snrDb.toFixed(1)}</TableCell>
-                    <TableCell className={`text-right font-mono ${r.linkMarginDb < 0 ? 'text-destructive' : ''}`}>
+                    <TableCell className={`text-right font-mono ${marginCls(r.linkMarginDb)}`}>
                       {r.linkMarginDb.toFixed(1)}
                     </TableCell>
                   </TableRow>
@@ -531,7 +568,7 @@ export function ResultsPanel() {
                     <TableCell className="text-right font-mono">{r.medianLossDb.toFixed(1)}</TableCell>
                     <TableCell className="text-right font-mono">{r.prxDbm.toFixed(1)}</TableCell>
                     <TableCell className="text-right font-mono">{r.snrDb.toFixed(1)}</TableCell>
-                    <TableCell className={`text-right font-mono ${r.linkMarginDb < 0 ? 'text-destructive' : ''}`}>
+                    <TableCell className={`text-right font-mono ${marginCls(r.linkMarginDb)}`}>
                       {r.linkMarginDb.toFixed(1)}
                     </TableCell>
                   </TableRow>

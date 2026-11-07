@@ -260,8 +260,8 @@ def _validate_input(inp: dict) -> None:
         if not isinstance(path.get("profile"), list) or len(path["profile"]) < 3:
             raise ValueError("Профиль трассы должен содержать минимум 3 точки")
         for k_, v_ in (("txHeightM", inp.get("txHeightM", 0)), ("rxHeightM", inp.get("rxHeightM", 0))):
-            if not (0.5 <= float(v_) <= 600):
-                raise ValueError(f"Высота антенны {k_}={v_} м вне диапазона 0.5–600 м")
+            if not (0.5 <= float(v_) <= 5000):
+                raise ValueError(f"Высота антенны {k_}={v_} м вне диапазона 0.5–5000 м")
     except KeyError as e:
         raise HTTPException(400, f"Отсутствует обязательное поле: {e}")
     except ValueError as e:

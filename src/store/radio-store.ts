@@ -539,6 +539,17 @@ export const useRadioStore = create<RadioState>((set, get) => ({
           linkMarginDb: budget.linkMarginDb,
           input: lastInput,
           budget,
+          // Снимок параметров линка: полное восстановление формы из истории
+          linkParams: {
+            frequencyMode: s.frequencyMode,
+            freqFromMhz: s.freqFromMhz,
+            freqToMhz: s.freqToMhz,
+            mobileFrequencyMhz: s.mobileFrequencyMhz,
+            mobileFrequencyMode: s.mobileFrequencyMode,
+            mobileFreqFromMhz: s.mobileFreqFromMhz,
+            mobileFreqToMhz: s.mobileFreqToMhz,
+            equipment: s.equipment,
+          },
         }
         const saved = await saveHistory(entry)
         void syncEntry(saved)

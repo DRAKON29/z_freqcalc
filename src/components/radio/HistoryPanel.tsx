@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useRadioStore } from '@/store/radio-store'
+import { linkStatus } from '@/lib/radio/budget'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -78,6 +79,21 @@ export function HistoryPanel() {
     s.setField('kFactor', inp.kFactor)
     s.setField('climateZone', inp.climateZone)
     s.setAtmosphere(inp.atmosphere)
+    // Полное восстановление параметров линка: частотные режимы обеих станций
+    // и оборудование (в старых записях снимка нет — остаётся текущее состояние)
+    const lp = e.linkParams
+    if (lp) {
+      s.setField('frequencyMode', lp.frequencyMode)
+      s.setField('freqFromMhz', lp.freqFromMhz)
+      s.setField('freqToMhz', lp.freqToMhz)
+      s.setField('mobileFrequencyMhz', lp.mobileFrequencyMhz)
+      s.setField('mobileFrequencyMode', lp.mobileFrequencyMode)
+      s.setField('mobileFreqFromMhz', lp.mobileFreqFromMhz)
+      s.setField('mobileFreqToMhz', lp.mobileFreqToMhz)
+      s.setEquipment(lp.equipment)
+    }
+    // Модель распространения — часть настройки расчёта
+    s.setField('model', e.model)
     void calculate()
   }
 
@@ -186,7 +202,7 @@ export function HistoryPanel() {
                     <TableCell className="text-right text-xs font-mono">{e.frequencyMhz} МГц</TableCell>
                     <TableCell className="text-right text-xs font-mono">{e.distanceKm.toFixed(1)} км</TableCell>
                     <TableCell className="text-right text-xs font-mono">{e.medianLossDb.toFixed(1)} дБ</TableCell>
-                    <TableCell className={`text-right text-xs font-mono ${e.linkMarginDb < 0 ? 'text-destructive' : ''}`}>
+                    <TableCell className={`text-right text-xs font-mono ${linkStatus(e.linkMarginDb) === 'stable' ? 'text-emerald-600' : linkStatus(e.linkMarginDb) === 'marginal' ? 'text-amber-600' : 'text-destructive'}`}>
                       {e.linkMarginDb.toFixed(1)} дБ
                     </TableCell>
                     <TableCell className="text-xs">{e.synced ? '✓' : '—'}</TableCell>

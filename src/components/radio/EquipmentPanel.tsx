@@ -15,7 +15,7 @@ import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { MODULATIONS } from '@/lib/radio/constants'
-import type { ModulationId } from '@/lib/radio/types'
+import type { AntennaParams, ModulationId } from '@/lib/radio/types'
 import { SlidersHorizontal, RadioTower, Plane } from 'lucide-react'
 
 type PowerUnit = 'dbm' | 'mw'
@@ -46,6 +46,209 @@ function NumField({
   )
 }
 
+/**
+ * Карточка приёмо-передатчика станции. Обе станции (наземная и подвижная)
+ * рендерятся этим же компонентом — структура карточек идентична по построению:
+ * высота антенны, антенна, передатчик (мощность), приёмник (чувствительность),
+ * в подробном режиме — параметры антенны и общие параметры приёмника.
+ * Различаются только данные, цвет и направление линии в секциях.
+ */
+function StationCard({
+  station,
+  detailed,
+  powerUnit,
+  onPowerUnitChange,
+}: {
+  station: 'ground' | 'mobile'
+  detailed: boolean
+  powerUnit: PowerUnit
+  onPowerUnitChange: (u: PowerUnit) => void
+}) {
+  const eq = useRadioStore((s) => s.equipment)
+  const setEquipment = useRadioStore((s) => s.setEquipment)
+  const setField = useRadioStore((s) => s.setField)
+  const heightM = useRadioStore((s) => (station === 'ground' ? s.txHeightM : s.rxHeightM))
+
+  const isGround = station === 'ground'
+  const ant = isGround ? eq.tx : eq.rx
+  const setAnt = (patch: Partial<AntennaParams>) =>
+    setEquipment(isGround ? { tx: { ...eq.tx, ...patch } } : { rx: { ...eq.rx, ...patch } })
+  const txPowerDbm = isGround ? eq.transmitter.powerDbm : eq.receiver.powerDbm
+  const setTxPowerDbm = (v: number) =>
+    setEquipment(
+      isGround
+        ? { transmitter: { ...eq.transmitter, powerDbm: v } }
+        : { receiver: { ...eq.receiver, powerDbm: v } },
+    )
+  const rxSensDbm = isGround ? eq.transmitter.sensitivityDbm : eq.receiver.sensitivityDbm
+  const setRxSensDbm = (v: number) =>
+    setEquipment(
+      isGround
+        ? { transmitter: { ...eq.transmitter, sensitivityDbm: v } }
+        : { receiver: { ...eq.receiver, sensitivityDbm: v } },
+    )
+
+  return (
+    <div className="space-y-3 rounded-lg border p-3">
+      <div>
+        <p className={`flex items-center gap-1.5 text-sm font-semibold ${isGround ? 'text-emerald-700' : 'text-amber-700'}`}>
+          {isGround ? <RadioTower className="h-4 w-4" /> : <Plane className="h-4 w-4" />}
+          {isGround ? 'Наземный приёмо-передатчик (Tx)' : 'Подвижный приёмо-передатчик (Rx)'}
+        </p>
+        <p className="text-[11px] text-muted-foreground">
+          {isGround ? 'точка A · высота антенны над землёй' : 'точка Б · текущая позиция объекта'}
+        </p>
+      </div>
+      <NumField
+        label="Высота антенны, м"
+        value={heightM}
+        onChange={(v) => setField(isGround ? 'txHeightM' : 'rxHeightM', v)}
+        step={0.5}
+        min={0.5}
+        max={5000}
+      />
+
+      <div className="space-y-2 rounded-md border p-2.5">
+        <p className="text-xs font-medium text-muted-foreground">Антенна {isGround ? 'Tx' : 'Rx'}</p>
+        <div className="grid grid-cols-2 gap-2">
+          <NumField label="Усиление, дБи" value={ant.gainDbi} onChange={(v) => setAnt({ gainDbi: v })} />
+          <div>
+            <Label className="text-xs">Поляризация</Label>
+            <Select
+              value={ant.polarization}
+              onValueChange={(v) => setAnt({ polarization: v as 'vertical' | 'horizontal' | 'circular' })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="vertical">Вертикальная</SelectItem>
+                <SelectItem value="horizontal">Горизонтальная</SelectItem>
+                <SelectItem value="circular">Круговая</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <NumField label="Ширина луча, °" value={ant.beamwidthDeg ?? 30} onChange={(v) => setAnt({ beamwidthDeg: v })} step={1} min={1} max={360} />
+          {detailed && (
+            <>
+              <NumField label="Ур. боковых лепестков, дБ" value={ant.sidelobeDb ?? -25} onChange={(v) => setAnt({ sidelobeDb: v })} />
+              <NumField label="Рассогласование, дБ" value={ant.mismatchLossDb ?? 0.5} onChange={(v) => setAnt({ mismatchLossDb: v })} />
+              <NumField label="КСВН (VSWR)" value={ant.vswr ?? 1.5} onChange={(v) => setAnt({ vswr: v })} />
+              <NumField label="Потери фидера, дБ" value={ant.feederLossDb ?? 1.5} onChange={(v) => setAnt({ feederLossDb: v })} />
+              <NumField label="Азимут, °" value={ant.azimuthDeg ?? 0} onChange={(v) => setAnt({ azimuthDeg: v })} step={1} />
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-2 rounded-md border p-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+            Передатчик
+            <Badge variant="outline" className="text-[10px] font-normal">
+              {isGround ? 'прямая линия' : 'обратная линия'}
+            </Badge>
+          </p>
+          {/* Переключатель единиц мощности (общий для обеих карточек) */}
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className={powerUnit === 'dbm' ? 'font-medium' : 'text-muted-foreground'}>дБм (dBm)</span>
+            <Switch
+              checked={powerUnit === 'mw'}
+              onCheckedChange={(v) => onPowerUnitChange(v ? 'mw' : 'dbm')}
+              aria-label={`Переключатель единиц мощности ${isGround ? 'наземного' : 'подвижного'}`}
+            />
+            <span className={powerUnit === 'mw' ? 'font-medium' : 'text-muted-foreground'}>мВт (mW)</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {powerUnit === 'dbm' ? (
+            <NumField
+              label="Мощность, дБм (dBm)"
+              value={txPowerDbm}
+              onChange={setTxPowerDbm}
+              step={1}
+            />
+          ) : (
+            <NumField
+              label="Мощность, мВт (mW)"
+              value={+dbmToMw(txPowerDbm).toFixed(2)}
+              onChange={(v) => setTxPowerDbm(+mwToDbm(v).toFixed(2))}
+              step={10}
+              min={0}
+            />
+          )}
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          {powerUnit === 'dbm'
+            ? `≈ ${dbmToMw(txPowerDbm).toFixed(2)} мВт (mW)`
+            : `≈ ${txPowerDbm.toFixed(2)} дБм (dBm)`}
+        </p>
+      </div>
+
+      <div className="space-y-2 rounded-md border p-2.5">
+        <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+          Приёмник
+          <Badge variant="outline" className="text-[10px] font-normal">
+            {isGround ? 'обратная линия' : 'прямая линия'}
+          </Badge>
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          <NumField label="Чувствительность, дБм (dBm)" value={rxSensDbm} onChange={setRxSensDbm} step={1} />
+          {detailed && (
+            <>
+              <NumField
+                label="Шумовая полоса, Гц"
+                value={eq.receiver.noiseBandwidthHz ?? 1e6}
+                onChange={(v) => setEquipment({ receiver: { ...eq.receiver, noiseBandwidthHz: v } })}
+                step={1e5}
+                min={100}
+              />
+              <NumField label="Коэффициент шума (NF), дБ" value={eq.receiver.noiseFigureDb ?? 3} onChange={(v) => setEquipment({ receiver: { ...eq.receiver, noiseFigureDb: v } })} />
+              <div>
+                <Label className="text-xs">Модуляция</Label>
+                <Select
+                  value={eq.receiver.modulation ?? 'QPSK'}
+                  onValueChange={(v) => {
+                    const mod = v as ModulationId
+                    setEquipment({
+                      receiver: {
+                        ...eq.receiver,
+                        modulation: mod,
+                        requiredEbN0Db: MODULATIONS[mod].ebN0Db,
+                      },
+                    })
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(MODULATIONS).map(([id, m]) => (
+                      <SelectItem key={id} value={id}>
+                        {m.label} (Eb/N₀ {m.ebN0Db} дБ)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <NumField
+                label="Требуемое Eb/N₀, дБ"
+                value={eq.receiver.requiredEbN0Db ?? 9.6}
+                onChange={(v) => setEquipment({ receiver: { ...eq.receiver, requiredEbN0Db: v } })}
+              />
+            </>
+          )}
+        </div>
+        {detailed && (
+          <p className="text-[11px] text-muted-foreground">
+            Шумовая полоса, NF, модуляция — общие для обеих станций (одна радиосистема).
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function EquipmentPanel() {
   const eq = useRadioStore((s) => s.equipment)
   const setEquipment = useRadioStore((s) => s.setEquipment)
@@ -55,12 +258,9 @@ export function EquipmentPanel() {
   const setField = useRadioStore((s) => s.setField)
   const setBackend = useRadioStore((s) => s.setBackend)
   const checkBackend = useRadioStore((s) => s.checkBackend)
-  const txHeightM = useRadioStore((s) => s.txHeightM)
-  const rxHeightM = useRadioStore((s) => s.rxHeightM)
   const [powerUnit, setPowerUnit] = useState<PowerUnit>('dbm')
 
   const detailed = eq.mode === 'detailed'
-  const txPowerDbm = eq.transmitter.powerDbm
 
   return (
     <div className="space-y-4">
@@ -136,208 +336,22 @@ export function EquipmentPanel() {
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             {/* Наземный приёмо-передатчик (Tx, точка A) */}
-            <div className="space-y-3 rounded-lg border p-3">
-              <div>
-                <p className="flex items-center gap-1.5 text-sm font-semibold text-emerald-700">
-                  <RadioTower className="h-4 w-4" /> Наземный приёмо-передатчик (Tx)
-                </p>
-                <p className="text-[11px] text-muted-foreground">точка A · высота антенны над землёй</p>
-              </div>
-              <NumField
-                label="Высота антенны, м"
-                value={txHeightM}
-                onChange={(v) => setField('txHeightM', v)}
-                step={0.5}
-                min={0.5}
-                max={600}
-              />
-
-              <div className="space-y-2 rounded-md border p-2.5">
-                <p className="text-xs font-medium text-muted-foreground">Антенна Tx</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <NumField label="Усиление, дБи" value={eq.tx.gainDbi} onChange={(v) => setEquipment({ tx: { ...eq.tx, gainDbi: v } })} />
-                  <div>
-                    <Label className="text-xs">Поляризация</Label>
-                    <Select
-                      value={eq.tx.polarization}
-                      onValueChange={(v) => setEquipment({ tx: { ...eq.tx, polarization: v as 'vertical' | 'horizontal' | 'circular' } })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="vertical">Вертикальная</SelectItem>
-                        <SelectItem value="horizontal">Горизонтальная</SelectItem>
-                        <SelectItem value="circular">Круговая</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {detailed && (
-                    <>
-                      <NumField label="Ширина луча, °" value={eq.tx.beamwidthDeg ?? 30} onChange={(v) => setEquipment({ tx: { ...eq.tx, beamwidthDeg: v } })} />
-                      <NumField label="Ур. боковых лепестков, дБ" value={eq.tx.sidelobeDb ?? -25} onChange={(v) => setEquipment({ tx: { ...eq.tx, sidelobeDb: v } })} />
-                      <NumField label="Рассогласование, дБ" value={eq.tx.mismatchLossDb ?? 0.5} onChange={(v) => setEquipment({ tx: { ...eq.tx, mismatchLossDb: v } })} />
-                      <NumField label="КСВН (VSWR)" value={eq.tx.vswr ?? 1.5} onChange={(v) => setEquipment({ tx: { ...eq.tx, vswr: v } })} />
-                      <NumField label="Потери фидера, дБ" value={eq.tx.feederLossDb ?? 1.5} onChange={(v) => setEquipment({ tx: { ...eq.tx, feederLossDb: v } })} />
-                      <NumField label="Азимут, °" value={eq.tx.azimuthDeg ?? 0} onChange={(v) => setEquipment({ tx: { ...eq.tx, azimuthDeg: v } })} step={1} />
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-2 rounded-md border p-2.5">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-medium text-muted-foreground">Передатчик</p>
-                  {/* Переключатель единиц мощности */}
-                  <div className="flex items-center gap-1.5 text-xs">
-                    <span className={powerUnit === 'dbm' ? 'font-medium' : 'text-muted-foreground'}>дБм (dBm)</span>
-                    <Switch
-                      checked={powerUnit === 'mw'}
-                      onCheckedChange={(v) => setPowerUnit(v ? 'mw' : 'dbm')}
-                      aria-label="Переключатель единиц мощности"
-                    />
-                    <span className={powerUnit === 'mw' ? 'font-medium' : 'text-muted-foreground'}>мВт (mW)</span>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {powerUnit === 'dbm' ? (
-                    <NumField
-                      label="Мощность, дБм (dBm)"
-                      value={txPowerDbm}
-                      onChange={(v) => setEquipment({ transmitter: { ...eq.transmitter, powerDbm: v } })}
-                      step={1}
-                    />
-                  ) : (
-                    <NumField
-                      label="Мощность, мВт (mW)"
-                      value={+dbmToMw(txPowerDbm).toFixed(2)}
-                      onChange={(v) => setEquipment({ transmitter: { ...eq.transmitter, powerDbm: +mwToDbm(v).toFixed(2) } })}
-                      step={10}
-                      min={0}
-                    />
-                  )}
-                  <NumField label="Чувствительность приёмника (обратная линия), дБм" value={eq.transmitter.sensitivityDbm} onChange={(v) => setEquipment({ transmitter: { ...eq.transmitter, sensitivityDbm: v } })} step={1} />
-                </div>
-                <p className="text-[11px] text-muted-foreground">
-                  {powerUnit === 'dbm'
-                    ? `≈ ${dbmToMw(txPowerDbm).toFixed(2)} мВт (mW)`
-                    : `≈ ${txPowerDbm.toFixed(2)} дБм (dBm)`}
-                </p>
-              </div>
-            </div>
+            <StationCard station="ground" detailed={detailed} powerUnit={powerUnit} onPowerUnitChange={setPowerUnit} />
 
             {/* Подвижный приёмо-передатчик (Rx, точка Б) */}
-            <div className="space-y-3 rounded-lg border p-3">
-              <div>
-                <p className="flex items-center gap-1.5 text-sm font-semibold text-amber-700">
-                  <Plane className="h-4 w-4" /> Подвижный приёмо-передатчик (Rx)
-                </p>
-                <p className="text-[11px] text-muted-foreground">точка Б · текущая позиция объекта</p>
-              </div>
-              <NumField
-                label="Высота антенны, м"
-                value={rxHeightM}
-                onChange={(v) => setField('rxHeightM', v)}
-                step={0.5}
-                min={0.5}
-                max={600}
-              />
-
-              <div className="space-y-2 rounded-md border p-2.5">
-                <p className="text-xs font-medium text-muted-foreground">Антенна Rx</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <NumField label="Усиление, дБи" value={eq.rx.gainDbi} onChange={(v) => setEquipment({ rx: { ...eq.rx, gainDbi: v } })} />
-                  <div>
-                    <Label className="text-xs">Поляризация</Label>
-                    <Select
-                      value={eq.rx.polarization}
-                      onValueChange={(v) => setEquipment({ rx: { ...eq.rx, polarization: v as 'vertical' | 'horizontal' | 'circular' } })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="vertical">Вертикальная</SelectItem>
-                        <SelectItem value="horizontal">Горизонтальная</SelectItem>
-                        <SelectItem value="circular">Круговая</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {detailed && (
-                    <>
-                      <NumField label="Ширина луча, °" value={eq.rx.beamwidthDeg ?? 30} onChange={(v) => setEquipment({ rx: { ...eq.rx, beamwidthDeg: v } })} />
-                      <NumField label="Ур. боковых лепестков, дБ" value={eq.rx.sidelobeDb ?? -25} onChange={(v) => setEquipment({ rx: { ...eq.rx, sidelobeDb: v } })} />
-                      <NumField label="Рассогласование, дБ" value={eq.rx.mismatchLossDb ?? 0.5} onChange={(v) => setEquipment({ rx: { ...eq.rx, mismatchLossDb: v } })} />
-                      <NumField label="КСВН (VSWR)" value={eq.rx.vswr ?? 1.5} onChange={(v) => setEquipment({ rx: { ...eq.rx, vswr: v } })} />
-                      <NumField label="Потери фидера, дБ" value={eq.rx.feederLossDb ?? 1.5} onChange={(v) => setEquipment({ rx: { ...eq.rx, feederLossDb: v } })} />
-                      <NumField label="Азимут, °" value={eq.rx.azimuthDeg ?? 0} onChange={(v) => setEquipment({ rx: { ...eq.rx, azimuthDeg: v } })} step={1} />
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-2 rounded-md border p-2.5">
-                <p className="text-xs font-medium text-muted-foreground">Приёмник</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <NumField label="Мощность передатчика (обратная линия), дБм" value={eq.receiver.powerDbm} onChange={(v) => setEquipment({ receiver: { ...eq.receiver, powerDbm: v } })} step={1} />
-                  <NumField label="Чувствительность, дБм (dBm)" value={eq.receiver.sensitivityDbm} onChange={(v) => setEquipment({ receiver: { ...eq.receiver, sensitivityDbm: v } })} step={1} />
-                  {detailed && (
-                    <>
-                      <NumField
-                        label="Шумовая полоса, Гц"
-                        value={eq.receiver.noiseBandwidthHz ?? 1e6}
-                        onChange={(v) => setEquipment({ receiver: { ...eq.receiver, noiseBandwidthHz: v } })}
-                        step={1e5}
-                        min={100}
-                      />
-                      <NumField label="Коэффициент шума (NF), дБ" value={eq.receiver.noiseFigureDb ?? 3} onChange={(v) => setEquipment({ receiver: { ...eq.receiver, noiseFigureDb: v } })} />
-                      <div>
-                        <Label className="text-xs">Модуляция</Label>
-                        <Select
-                          value={eq.receiver.modulation ?? 'QPSK'}
-                          onValueChange={(v) => {
-                            const mod = v as ModulationId
-                            setEquipment({
-                              receiver: {
-                                ...eq.receiver,
-                                modulation: mod,
-                                requiredEbN0Db: MODULATIONS[mod].ebN0Db,
-                              },
-                            })
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(MODULATIONS).map(([id, m]) => (
-                              <SelectItem key={id} value={id}>
-                                {m.label} (Eb/N₀ {m.ebN0Db} дБ)
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <NumField
-                        label="Требуемое Eb/N₀, дБ"
-                        value={eq.receiver.requiredEbN0Db ?? 9.6}
-                        onChange={(v) => setEquipment({ receiver: { ...eq.receiver, requiredEbN0Db: v } })}
-                      />
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
+            <StationCard station="mobile" detailed={detailed} powerUnit={powerUnit} onPowerUnitChange={setPowerUnit} />
           </div>
           <Separator />
           <p className="text-xs text-muted-foreground">
-            Высота антенны каждой станции задаётся в её карточке. В упрощённом режиме: усиления антенн,
-            мощность передатчика и чувствительность приёмника. В подробном добавляются ширина луча,
-            боковые лепестки, рассогласование, КСВН (VSWR), фидеры, полоса шума, коэффициент шума (NF)
-            и модуляция. Общие условия линии (частоты передатчиков, климатическая зона, рефракция,
-            атмосферные потери) — в карточке «Условия распространения». Обратная линия (подвижный Tx →
-            наземный Rx) использует мощность передатчика подвижной станции и чувствительность приёмника
-            наземной станции.
+            Карточки станций устроены одинаково: высота антенны, антенна, передатчик (мощность) и приёмник
+            (чувствительность). Секция передатчика наземной станции работает в прямой линии, подвижной — в обратной;
+            приёмник наземной станции принимает обратную линию, подвижной — прямую. Ширина луча антенны задаёт потери
+            на неточное наведение: A = 12·(θ/θ₃дБ)² при номинальном отклонении оси 10°, ограничение — по уровню боковых
+            лепестков; при ширине луча ≥ 180° (всенаправленная) не учитываются. В подробном режиме добавляются уровень
+            боковых лепестков, рассогласование, КСВН (VSWR), фидер и азимут антенн, а также параметры приёмника
+            (шумовая полоса, коэффициент шума (NF), модуляция, Eb/N₀) — последние общие для обеих станций: одна
+            радиосистема. Переключатель дБм/мВт действует на обе карточки. Общие условия линии (частоты передатчиков,
+            климатическая зона, рефракция, атмосферные потери) — в карточке «Условия распространения».
           </p>
         </CardContent>
       </Card>

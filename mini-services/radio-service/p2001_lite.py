@@ -316,6 +316,21 @@ def p2001_lite_calculate(json_input: str) -> str:
     return json.dumps(calculate(json.loads(json_input)))
 
 
+# Номинальное отклонение оси антенны от направления на корреспондента, °
+# (подвижный объект и антенны без идеального автосопровождения)
+NOMINAL_POINTING_ERROR_DEG = 10.0
+
+
+def _pointing_loss_db(ant: dict) -> float:
+    """Потери на неточное наведение — параболическая модель главного лепестка:
+    A(θ) = 12·(θ/θ3дБ)² дБ, ограничены уровнем боковых лепестков. При ширине
+    луча ≥ 180° (всенаправленная антенна) не учитываются."""
+    bw = ant.get("beamwidthDeg", 30)
+    if not bw or bw <= 0 or bw >= 180:
+        return 0.0
+    return min(12.0 * (NOMINAL_POINTING_ERROR_DEG / bw) ** 2, -ant.get("sidelobeDb", -25))
+
+
 def compute_budget(inp: dict, equipment: dict, prop: dict, doppler_loss_db: float = 0.0) -> dict:
     """Бюджет линии по формулам"""
     detailed = equipment.get("mode") == "detailed"
@@ -326,11 +341,13 @@ def compute_budget(inp: dict, equipment: dict, prop: dict, doppler_loss_db: floa
     rx_feeder = rx.get("feederLossDb", 0) if detailed else 0
     tx_mis = tx.get("mismatchLossDb", 0) if detailed else 0
     rx_mis = rx.get("mismatchLossDb", 0) if detailed else 0
+    tx_point = _pointing_loss_db(tx)
+    rx_point = _pointing_loss_db(rx)
 
-    eirp = transmitter["powerDbm"] - tx_feeder - tx_mis + tx["gainDbi"]
+    eirp = transmitter["powerDbm"] - tx_feeder - tx_mis - tx_point + tx["gainDbi"]
     extra = (prop["breakdown"].get("rainDb") or 0) + (prop["breakdown"].get("gasesDb") or 0) \
         + (prop["breakdown"].get("vegetationDb") or 0) + doppler_loss_db
-    prx = eirp - prop["medianLossDb"] - extra + rx["gainDbi"] - rx_feeder - rx_mis
+    prx = eirp - prop["medianLossDb"] - extra + rx["gainDbi"] - rx_feeder - rx_mis - rx_point
 
     nf = receiver.get("noiseFigureDb", 3) if detailed else 3
     b_hz = receiver.get("noiseBandwidthHz", 1e6) if detailed else 1e6

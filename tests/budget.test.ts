@@ -1,6 +1,6 @@
 /** Тесты бюджета линии и доплера. */
 import { describe, it, expect } from 'bun:test'
-import { computeLinkBudget } from '../src/lib/radio/budget'
+import { computeLinkBudget, linkStatus, LINK_LOST_MARGIN_DB } from '../src/lib/radio/budget'
 import { dopplerLossDb, dopplerToleranceHz, zoneRadiusM } from '../src/lib/radio/doppler'
 import type { CalculationInput, EquipmentParams, PropagationResult } from '../src/lib/radio/types'
 import { K_BOLTZMANN } from '../src/lib/radio/constants'
@@ -41,8 +41,9 @@ const prop: PropagationResult = {
 
 const equipmentSimple: EquipmentParams = {
   mode: 'simple',
-  tx: { gainDbi: 10, polarization: 'vertical' },
-  rx: { gainDbi: 3, polarization: 'vertical' },
+  // Всенаправленная антенна (≥180°) — без потерь наведения, чтобы формулы были явными
+  tx: { gainDbi: 10, polarization: 'vertical', beamwidthDeg: 360 },
+  rx: { gainDbi: 3, polarization: 'vertical', beamwidthDeg: 360 },
   transmitter: { powerDbm: 30, sensitivityDbm: -100 },
   receiver: { powerDbm: 0, sensitivityDbm: -100, noiseBandwidthHz: 1e6, noiseFigureDb: 5, modulation: 'QPSK', requiredEbN0Db: 9.6 },
 }
@@ -89,10 +90,52 @@ describe('Бюджет линии', () => {
     expect(b.prxDbm).toBeCloseTo(b.eirpDbm - 113.3 + 3 - 1.5 - 0.5, 5)
   })
 
+  it('ширина луча 30° даёт потери наведения 12·(10/30)² на каждую антенну', () => {
+    // beamwidthDeg отсутствует → модель по умолчанию 30°
+    const b = computeLinkBudget(input, { ...equipmentSimple, tx: { ...equipmentSimple.tx, beamwidthDeg: undefined }, rx: { ...equipmentSimple.rx, beamwidthDeg: undefined } }, prop)
+    const point = 12 * (10 / 30) ** 2
+    expect(b.eirpDbm).toBeCloseTo(40 - point, 5)
+    expect(b.prxDbm).toBeCloseTo(40 - 113.3 + 3 - 2 * point, 5)
+    expect(b.income.some((r) => r.label === 'Наведение антенны Tx (ширина луча)')).toBe(true)
+  })
+
+  it('широкий луч уменьшает потери наведения, узкий ограничен УБЛ', () => {
+    const wide = computeLinkBudget(input, { ...equipmentSimple, tx: { ...equipmentSimple.tx, beamwidthDeg: 90 }, rx: { ...equipmentSimple.rx, beamwidthDeg: 90 } }, prop)
+    expect(wide.eirpDbm).toBeCloseTo(40 - 12 * (10 / 90) ** 2, 5)
+    const capped = computeLinkBudget(input, { ...equipmentSimple, tx: { ...equipmentSimple.tx, beamwidthDeg: 1, sidelobeDb: -10 }, rx: { ...equipmentSimple.rx, beamwidthDeg: 360 } }, prop)
+    expect(capped.eirpDbm).toBeCloseTo(40 - 10, 5)
+  })
+
   it('доплер добавляется в бюджет как потеря', () => {
     const b = computeLinkBudget(input, equipmentSimple, prop, { dopplerLossDb: 4 })
     const bNo = computeLinkBudget(input, equipmentSimple, prop)
     expect(b.prxDbm).toBeCloseTo(bNo.prxDbm - 4, 5)
+  })
+})
+
+describe('Цветовой статус связи (linkStatus)', () => {
+  it('без кривой замираний: ≥0 — стабильна, −10..0 — нестабильна, <−10 — отсутствует', () => {
+    expect(linkStatus(0)).toBe('stable')
+    expect(linkStatus(5)).toBe('stable')
+    expect(linkStatus(-0.1)).toBe('marginal')
+    expect(linkStatus(LINK_LOST_MARGIN_DB)).toBe('marginal')
+    expect(linkStatus(LINK_LOST_MARGIN_DB - 0.1)).toBe('lost')
+  })
+
+  it('P.2001: запас покрывает рост потерь до 99 % времени — стабильна', () => {
+    // Потери, превышаемые p % времени: с ростом p убывают (ITU-конвенция)
+    const p = {
+      byTimePercent: [
+        { percent: 50, lossDb: 173 },
+        { percent: 90, lossDb: 170 },
+        { percent: 99, lossDb: 165 },
+      ],
+    }
+    // доступность ≥ 99 % требует запаса ≥ 173 − 165 = 8 дБ
+    expect(linkStatus(8, p as never)).toBe('stable')
+    expect(linkStatus(7.9, p as never)).toBe('marginal')
+    expect(linkStatus(-5, p as never)).toBe('marginal')
+    expect(linkStatus(-15, p as never)).toBe('lost')
   })
 })
 

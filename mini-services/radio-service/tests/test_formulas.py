@@ -117,8 +117,9 @@ class TestBudget:
         }
         self.equipment = {
             "mode": "simple",
-            "tx": {"gainDbi": 10, "polarization": "vertical"},
-            "rx": {"gainDbi": 3, "polarization": "vertical"},
+            # Всенаправленная антенна (≥180°) — без потерь наведения, формулы явные
+            "tx": {"gainDbi": 10, "polarization": "vertical", "beamwidthDeg": 360},
+            "rx": {"gainDbi": 3, "polarization": "vertical", "beamwidthDeg": 360},
             "transmitter": {"powerDbm": 30, "sensitivityDbm": -100},
             "receiver": {"powerDbm": 0, "sensitivityDbm": -100, "noiseBandwidthHz": 1e6,
                          "noiseFigureDb": 5, "modulation": "QPSK", "requiredEbN0Db": 9.6},
@@ -141,6 +142,15 @@ class TestBudget:
         prop = calculate(self.inp)
         b = compute_budget(self.inp, self.equipment, prop)
         assert b["eirpDbm"] == 30 - 2 - 1 + 10
+
+    def test_pointing_loss_beamwidth(self):
+        """Ширина луча: параболическая модель наведения, всенаправленная — 0."""
+        self.equipment["tx"]["beamwidthDeg"] = 30
+        self.equipment["rx"]["beamwidthDeg"] = 360
+        prop = calculate(self.inp)
+        b = compute_budget(self.inp, self.equipment, prop)
+        assert b["eirpDbm"] == pytest.approx(40 - 12 * (10 / 30) ** 2, abs=1e-6)
+        assert b["prxDbm"] == pytest.approx(b["eirpDbm"] - prop["medianLossDb"] + 3, abs=1e-6)
 
 
 class TestDoppler:

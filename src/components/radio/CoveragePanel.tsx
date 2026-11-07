@@ -31,6 +31,99 @@ import { createHgtDem, createSyntheticDem, makeClutterSampler } from '@/lib/radi
 /** Размер канвы в физических пикселях (2× для чёткости). */
 const CANVAS_PX = 1120
 
+// ---- Подложка-карта (гибрид: спутник + населённые пункты) ----
+// Только для автоматического радиуса «длина трассы + 10 км»; слои снизу вверх:
+// карта → рельеф (полупрозрачный) → диаграмма. Для остальных радиусов — только рельеф.
+
+const TILE_PX = 256
+
+/** Кэш тайлов (URL → изображение), чтобы не перекачивать при перестроении. */
+const tileCache = new Map<string, HTMLImageElement>()
+
+function loadTile(url: string): Promise<HTMLImageElement | null> {
+  const cached = tileCache.get(url)
+  if (cached) return Promise.resolve(cached.naturalWidth > 0 ? cached : null)
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      if (tileCache.size > 400) tileCache.clear()
+      tileCache.set(url, img)
+      resolve(img)
+    }
+    img.onerror = () => resolve(null)
+    img.src = url
+  })
+}
+
+/**
+ * Слой гибридной карты для квадрата подложки (центр, полусторона halfM метров):
+ * Esri World Imagery (спутник) + Esri Boundaries and Places (подписи НП).
+ * Ошибка загрузки (офлайн/CORS) — null, диаграмма строится только на рельефе.
+ */
+async function buildMapLayer(
+  center: { lat: number; lon: number },
+  halfM: number,
+  sizePx: number,
+): Promise<HTMLCanvasElement | null> {
+  const cosLat = Math.cos((center.lat * Math.PI) / 180)
+  const dLat = halfM / 111320
+  const dLon = halfM / (111320 * cosLat)
+  const latN = center.lat + dLat
+  const lonW = center.lon - dLon
+  const lonE = center.lon + dLon
+  // Зум: сторона квадрата в пикселях тайловой сетки ~1024–2048
+  let z = 5
+  for (; z < 17; z++) {
+    const pxSpan = ((lonE - lonW) / 360) * TILE_PX * 2 ** z
+    if (pxSpan <= 2048) break
+  }
+  const world = TILE_PX * 2 ** z
+  const mercX = (lon: number) => ((lon + 180) / 360) * world
+  const mercY = (lat: number) => {
+    const s = Math.sin((Math.max(-85, Math.min(85, lat)) * Math.PI) / 180)
+    return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * world
+  }
+  const x0 = mercX(lonW)
+  const x1 = mercX(lonE)
+  const y0 = mercY(latN)
+  const latS = center.lat - dLat
+  const y1 = mercY(latS)
+  const tx0 = Math.floor(x0 / TILE_PX)
+  const tx1 = Math.floor((x1 - 1e-9) / TILE_PX)
+  const ty0 = Math.floor(y0 / TILE_PX)
+  const ty1 = Math.floor((y1 - 1e-9) / TILE_PX)
+  const cols = tx1 - tx0 + 1
+  const rows = ty1 - ty0 + 1
+  if (cols <= 0 || rows <= 0 || cols * rows > 120) return null
+  const satUrls: string[] = []
+  const lblUrls: string[] = []
+  for (let ty = ty0; ty <= ty1; ty++) {
+    for (let tx = tx0; tx <= tx1; tx++) {
+      satUrls.push(`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${ty}/${tx}`)
+      lblUrls.push(`https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/${z}/${ty}/${tx}`)
+    }
+  }
+  const [sat, lbl] = await Promise.all([
+    Promise.all(satUrls.map(loadTile)),
+    Promise.all(lblUrls.map(loadTile)),
+  ])
+  if (!sat.some(Boolean)) return null
+  const cv = document.createElement('canvas')
+  cv.width = sizePx
+  cv.height = sizePx
+  const ctx = cv.getContext('2d')
+  if (!ctx) return null
+  const scale = sizePx / (x1 - x0)
+  const place = (img: HTMLImageElement | null, tx: number, ty: number) => {
+    if (!img) return
+    ctx.drawImage(img, (tx * TILE_PX - x0) * scale, (ty * TILE_PX - y0) * scale, TILE_PX * scale + 1, TILE_PX * scale + 1)
+  }
+  sat.forEach((img, i) => place(img, tx0 + (i % cols), ty0 + Math.floor(i / cols)))
+  lbl.forEach((img, i) => place(img, tx0 + (i % cols), ty0 + Math.floor(i / cols)))
+  return cv
+}
+
 /** Гипсометрическая палитра рельефа: низины → вершины. */
 const TERRAIN_STOPS: Array<[number, [number, number, number]]> = [
   [0.0, [86, 118, 76]],
@@ -64,11 +157,30 @@ interface DiagramProps {
   coverage: CoverageResult
   grid: ElevationGrid
   radiusKm: number
+  /** Центр круга (точка A) — для подложки-карты */
+  center: { lat: number; lon: number }
+  /** Подложка-карта (гибрид) — только для радиуса «длина трассы + 10 км» */
+  showMap: boolean
 }
 
 /** Отрисовка диаграммы на канве (азимут 0° — север, по часовой). */
-function CoverageDiagram({ coverage, grid, radiusKm }: DiagramProps) {
+function CoverageDiagram({ coverage, grid, radiusKm, center, showMap }: DiagramProps) {
   const ref = useRef<HTMLCanvasElement>(null)
+  const [mapLayer, setMapLayer] = useState<HTMLCanvasElement | null>(null)
+  // Подложка активна только для радиуса «трасса + 10 км» (showMap)
+  const activeMap = showMap ? mapLayer : null
+
+  // Слой карты строится асинхронно; при ошибке (офлайн/CORS) — null, только рельеф
+  useEffect(() => {
+    if (!showMap) return
+    let cancelled = false
+    buildMapLayer(center, grid.halfM, CANVAS_PX).then((ml) => {
+      if (!cancelled) setMapLayer(ml)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [showMap, center, grid.halfM])
 
   useEffect(() => {
     const canvas = ref.current
@@ -98,7 +210,10 @@ function CoverageDiagram({ coverage, grid, radiusKm }: DiagramProps) {
     ctx.arc(c, c, maxR, 0, 2 * Math.PI)
     ctx.clip()
 
-    // ---- Рельеф (подложка) ----
+    // ---- Слой 1: карта (гибрид: спутник + населённые пункты) ----
+    if (activeMap) ctx.drawImage(activeMap, c - maxR, c - maxR, maxR * 2, maxR * 2)
+
+    // ---- Слой 2: рельеф (поверх карты полупрозрачный, без карты — сплошной) ----
     const n = grid.n
     const off = document.createElement('canvas')
     off.width = n
@@ -115,7 +230,9 @@ function CoverageDiagram({ coverage, grid, radiusKm }: DiagramProps) {
       }
       octx.putImageData(img, 0, 0)
       ctx.imageSmoothingEnabled = true
+      ctx.globalAlpha = activeMap ? 0.55 : 1
       ctx.drawImage(off, c - maxR, c - maxR, maxR * 2, maxR * 2)
+      ctx.globalAlpha = 1
     }
 
     // ---- Зоны покрытия (ступенчатая граница по азимутам, без диагоналей) ----
@@ -224,7 +341,7 @@ function CoverageDiagram({ coverage, grid, radiusKm }: DiagramProps) {
     ctx.textAlign = 'right'
     ctx.fillText('З', c - maxR - 18, c)
     ctx.textBaseline = 'alphabetic'
-  }, [coverage, grid, radiusKm])
+  }, [coverage, grid, radiusKm, activeMap])
 
   return (
     <canvas
@@ -348,9 +465,21 @@ export function CoveragePanel() {
         {data && cov && (
           <div className="space-y-2">
             <div className="flex justify-center">
-              <CoverageDiagram coverage={cov} grid={data.grid} radiusKm={radiusKm} />
+              <CoverageDiagram
+                coverage={cov}
+                grid={data.grid}
+                radiusKm={radiusKm}
+                center={lastInput.path.points[0]}
+                showMap={radiusChoice === null}
+              />
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground justify-center">
+              {radiusChoice === null && (
+                <span className="flex items-center gap-1.5">
+                  <span className="h-3 w-6 rounded-sm" style={{ background: 'linear-gradient(90deg,#3a4a3a,#7a8a6a)' }} />
+                  карта (спутник + населённые пункты)
+                </span>
+              )}
               <span className="flex items-center gap-1.5">
                 <span className="h-3 w-6 rounded-sm" style={{ background: 'rgba(16,185,129,0.35)', border: '1px solid #047857' }} />
                 зона связи (запас ≥ 0 дБ)
@@ -373,6 +502,9 @@ export function CoveragePanel() {
               дальность с запасом на линию (link margin) ≥ 0 дБ по медианным потерям 50 % времени (та же цепочка
               механизмов, что в основном расчёте: {cov.engineUsed}). Построено за {cov.computedAtMs} мс ·
               азимутов: {cov.radials.length} (шаг {cov.azimuthStepDeg}°).
+              {' '}Слои снизу вверх: гибридная карта (спутник + НП, Esri) — только для радиуса «длина трассы + 10 км»,
+              рельеф, зоны связи; для остальных радиусов — только рельеф. При недоступности тайлов диаграмма
+              строится на одном рельефе.
               {cov.stats.outsideTilesPercent !== undefined && cov.stats.outsideTilesPercent > 1 && (
                 <> Вне тайлов рельефа — {cov.stats.outsideTilesPercent} % точек круга (там высота принята 0 м, серая подложка).</>
               )}
