@@ -38,7 +38,8 @@ jobs:
         run: |
           cd mini-services/radio-service
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest httpx
+          # httpx2 — для fastapi TestClient (starlette 0.4x+, см. предупреждение testclient)
+          pip install -r requirements.txt pytest httpx2
       - name: Тесты Python (формулы + API)
         working-directory: mini-services/radio-service
         run: python -m pytest tests/ -q
