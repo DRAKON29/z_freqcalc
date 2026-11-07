@@ -18,6 +18,7 @@ services:
       - ../data/itu_maps:/data/itu_maps
       - ../data/clutter:/data/clutter
       - ../data/history:/data/history
+      - ../data/srtm:/data/srtm
     ports:
       - "127.0.0.1:8000:8000"
 

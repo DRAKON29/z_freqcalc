@@ -48,8 +48,9 @@ DATA_DIR = Path(os.environ.get("RADIO_DATA_DIR", APP_DIR / "data"))
 ITU_MAPS_DIR = DATA_DIR / "itu_maps"
 CLUTTER_FILE = DATA_DIR / "clutter" / "clutter.geojson"
 HISTORY_DB = DATA_DIR / "history" / "history.db"
+SRTM_DIR = DATA_DIR / "srtm"
 
-for d in [ITU_MAPS_DIR, CLUTTER_FILE.parent, HISTORY_DB.parent]:
+for d in [ITU_MAPS_DIR, CLUTTER_FILE.parent, HISTORY_DB.parent, SRTM_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 MAX_FILE_BYTES = 700 * 1024 * 1024   # 700 МБ на файл
@@ -325,6 +326,36 @@ def maps_delete(name: str):
         raise HTTPException(404, f"Карта {name} не найдена")
     target.unlink()
     return {"ok": True}
+
+
+# ---------- Тайлы SRTM (.hgt): список + раздача для автоподкачки клиента ----------
+
+_SRTM_NAME_RE = re.compile(r"^[NS]\d{2}[EW]\d{3}$")
+
+
+@app.get("/api/srtm")
+def srtm_list():
+    tiles = []
+    for p in sorted(SRTM_DIR.iterdir()):
+        if p.is_file() and p.suffix.lower() == ".hgt":
+            tiles.append({"name": p.stem, "size": p.stat().st_size, "modified": p.stat().st_mtime})
+    return {"tiles": tiles}
+
+
+@app.get("/api/srtm/{name}")
+def srtm_tile(name: str, request: Request):
+    rate_limit(request, RATE_LIMIT_UPLOAD, "srtm")
+    if not _SRTM_NAME_RE.match(name):
+        raise HTTPException(422, "Имя тайла должно быть вида N44E033")
+    target = SRTM_DIR / f"{name}.hgt"
+    if not target.is_file():
+        raise HTTPException(404, f"Тайл {name} не найден на сервере")
+    data = target.read_bytes()
+    return Response(
+        content=data,
+        media_type="application/octet-stream",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @app.get("/api/clutter")
