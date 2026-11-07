@@ -154,3 +154,4 @@ cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q
 | `src/components/radio/` | панели: Input, Equipment, Results, Dynamics, History, Maps, Map, Coverage, Pwa |
 | `src/app/page.tsx` | вкладки Расчёт/Динамика/История/Карты, порядок панелей, `loadItuMaps()` на монте |
 | `deploy/` | docker-compose http/wasm, openresty |
+| `ROADMAP.md` | план развития: анализ предметной области (ITU-R по классам задач), gap-анализ, этапы (этап 1 — availability/clearance/дифракция/P.372; этап 2 — ITM/UAV/C-I/сеть; этап 3 — калибровка; 3.1 спутник и 3.2 3GPP отложены) |
