@@ -17,6 +17,7 @@ import type {
   ModelId,
   PropagationResult,
   RangeFreqResult,
+  RouteData,
 } from '@/lib/radio/types'
 import { createModel, defaultBackend } from '@/lib/radio/models'
 import { computeLinkBudget } from '@/lib/radio/budget'
@@ -24,6 +25,7 @@ import { buildProfile, createHgtDem, createSyntheticDem, makeClutterSampler, par
 import { distanceM, bearingDeg, wgs84ToSk42, sk42ToWgs84 } from '@/lib/radio/coordinates'
 import { getDeviceId, saveHistory, syncEntry, listItuMaps, getItuMap, deleteItuMap } from '@/lib/radio/history'
 import { calculationInputSchema, dynamicParamsSchema } from '@/lib/radio/validation'
+import { parseRouteFile, routeDurationS } from '@/lib/radio/route'
 import { ituEnvironmentAt, ituProductKey, type ItuGridSet } from '@/lib/radio/itu-env'
 import type { ItuGrid } from '@/lib/radio/itu-grid'
 import { LIMITS } from '@/lib/radio/constants'
@@ -134,6 +136,8 @@ export interface RadioState {
   hgtTiles: HgtTile[]
   clutter: ClutterGeoJson | null
   demInfo: string
+  /** Подкачка тайлов SRTM с сервера (прогресс; null — не выполняется) */
+  srtmSync: { done: number; total: number } | null
 
   // Цифровые продукты ITU-R P.2001-6 (Table 3): разобранные сетки + ошибки проверки
   ituGrids: ItuGridSet
@@ -159,6 +163,8 @@ export interface RadioState {
   dynamicsParams: DynamicParams
   altitudeMode: 'single' | 'multi'
   altitudes: number[]
+  /** Маршрут из файла траектории (вкладка «Динамика») */
+  route: RouteData | null
   dynamics: DynamicsResult | null
   dynamicsAll: DynamicsResult[]
   fpsMeasured: number | null
@@ -174,6 +180,8 @@ export interface RadioState {
   setBackend: (b: BackendId) => void
   setHgtTiles: (tiles: HgtTile[]) => void
   addHgtTile: (buffer: ArrayBuffer, filename: string) => string | null
+  /** Докачка с сервера тайлов SRTM, покрывающих трассу, которых нет в кэше браузера. */
+  fetchMissingSrtmTiles: () => Promise<{ downloaded: number }>
   setClutter: (gj: ClutterGeoJson | null) => void
   setAltitudes: (list: number[]) => void
   /** Разбор и добавление продукта ITU (после сохранения в кэш IndexedDB). */
@@ -183,6 +191,10 @@ export interface RadioState {
   /** Загрузка сохранённых карт ITU из IndexedDB и разбор всех продуктов. */
   loadItuMaps: () => Promise<void>
   applyDynamicsFromTrack: () => void
+  /** Загрузка файла траектории: разбор + высота штатива → антенна наземной станции. */
+  loadRoute: (fileName: string, text: string) => { ok: boolean; error?: string }
+  /** Сброс маршрута из файла. */
+  clearRoute: () => void
   checkBackend: () => Promise<boolean>
   calculate: () => Promise<void>
   runDynamics: () => void
@@ -214,6 +226,7 @@ export const useRadioStore = create<RadioState>((set, get) => ({
   hgtTiles: [],
   clutter: null,
   demInfo: 'Синтетический рельеф (demo)',
+  srtmSync: null,
 
   ituGrids: {},
   ituLoadErrors: {},
@@ -241,6 +254,7 @@ export const useRadioStore = create<RadioState>((set, get) => ({
   },
   altitudeMode: 'single',
   altitudes: [500, 1000],
+  route: null,
   dynamics: null,
   dynamicsAll: [],
   fpsMeasured: null,
@@ -273,6 +287,47 @@ export const useRadioStore = create<RadioState>((set, get) => ({
   },
 
   setClutter: (gj) => set({ clutter: gj }),
+
+  /** Докачка с сервера тайлов SRTM, покрывающих трассу A–Б, которых нет в кэше браузера.
+   *  Тихая при недоступности бэкенда/IndexedDB; ошибки отдельных тайлов пропускаются. */
+  fetchMissingSrtmTiles: async () => {
+    const s = get()
+    if (s.backendAvailable !== true) return { downloaded: 0 }
+    const [{ requiredTilesForTrack }, { listSrtmTiles, putSrtmTile }, { apiUrl }] = await Promise.all([
+      import('@/lib/radio/terrain'),
+      import('@/lib/radio/history'),
+      import('@/lib/radio/models/api'),
+    ])
+    let have: string[] = []
+    try {
+      have = await listSrtmTiles()
+    } catch {
+      // IndexedDB недоступна — подкачка невозможна
+      return { downloaded: 0 }
+    }
+    const haveSet = new Set(have)
+    const missing = requiredTilesForTrack(s.pointA, s.pointB).filter((n) => !haveSet.has(n))
+    if (missing.length === 0) return { downloaded: 0 }
+
+    set({ srtmSync: { done: 0, total: missing.length } })
+    let downloaded = 0
+    for (const name of missing) {
+      try {
+        const res = await fetch(apiUrl(`/srtm/${name}`), { signal: AbortSignal.timeout(30000) })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const buf = await res.arrayBuffer()
+        await putSrtmTile(name, buf)
+        const err = get().addHgtTile(buf, `${name}.hgt`)
+        if (err) console.warn(`Тайл ${name}: ${err}`)
+        else downloaded++
+      } catch (e) {
+        console.warn(`Не удалось подтянуть тайл ${name} с сервера:`, e)
+      }
+      set((st) => ({ srtmSync: st.srtmSync ? { ...st.srtmSync, done: st.srtmSync.done + 1 } : null }))
+    }
+    set({ srtmSync: null })
+    return { downloaded }
+  },
 
   setAltitudes: (list) => set({ altitudes: list }),
 
@@ -362,6 +417,30 @@ export const useRadioStore = create<RadioState>((set, get) => ({
     })
   },
 
+  /** Загрузка файла траектории: разбор, применение высоты штатива к антенне наземной станции. */
+  loadRoute: (fileName, text) => {
+    const res = parseRouteFile(text, fileName)
+    if (!res.ok) return { ok: false, error: `${fileName}: ${res.error}` }
+    const pts = res.data.points
+    set((s) => ({
+      route: res.data,
+      // Концы траектории → трасса A–Б основного расчёта
+      pointA: { lat: pts[0].lat, lon: pts[0].lon },
+      pointB: { lat: pts[pts.length - 1].lat, lon: pts[pts.length - 1].lon },
+      // tripodHeight из файла — высота антенны на штативе наземной станции; 0 клампим к минимуму
+      txHeightM: Math.max(0.5, res.data.tripodHeightM),
+      // результаты динамики устарели
+      dynamics: null,
+      dynamicsAll: [],
+      fpsMeasured: null,
+      animationAllowed: null,
+    }))
+    return { ok: true }
+  },
+
+  clearRoute: () =>
+    set({ route: null, dynamics: null, dynamicsAll: [], fpsMeasured: null, animationAllowed: null }),
+
   checkBackend: async () => {
     const { apiUrl } = await import('@/lib/radio/models/api')
     try {
@@ -380,11 +459,15 @@ export const useRadioStore = create<RadioState>((set, get) => ({
     set({ calculating: true, lastError: null, terrainWarning: null })
 
     try {
-      const baseInput = buildInput(s)
+      // Автоподкачка тайлов рельефа, покрывающих трассу, с сервера (тихо при
+      // недоступности; после подкачки берём свежий стейт с новыми hgtTiles)
+      await get().fetchMissingSrtmTiles()
+      const sAfterSrtm = get()
+      const baseInput = buildInput(sAfterSrtm)
 
       // Проверка покрытия трассы загруженными тайлами рельефа
-      if (s.hgtTiles.length > 0) {
-        const cov = pathTileCoverage(baseInput.path.profile, baseInput.path.points, s.hgtTiles)
+      if (sAfterSrtm.hgtTiles.length > 0) {
+        const cov = pathTileCoverage(baseInput.path.profile, baseInput.path.points, sAfterSrtm.hgtTiles)
         if (cov.outside) {
           const pct = Math.max(0, Math.round((1 - cov.insideRatio) * 100))
           set({
@@ -583,22 +666,33 @@ export const useRadioStore = create<RadioState>((set, get) => ({
 
     import('@/lib/radio/doppler').then(({ simulateDynamics }) => {
       const all: DynamicsResult[] = []
-      for (const h of heights) {
-        const dp: DynamicParams = { ...s.dynamicsParams, altitudeM: h }
-        const parsed = dynamicParamsSchema.safeParse(dp)
-        if (!parsed.success) {
-          all.push({
-            samples: [],
-            maxDopplerHz: 0,
-            minMarginDb: 0,
-            exitTimeS: null,
-            warnings: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
-            altitudeM: h,
-          })
-          continue
+      if (s.route) {
+        // Маршрут из файла: один прогон, высота/скорость/длительность из файла
+        const dp: DynamicParams = {
+          ...s.dynamicsParams,
+          altitudeM: s.route.points[0].altitudeM,
+          durationS: routeDurationS(s.route),
         }
-        const dyn = simulateDynamics({ ...input, aviation: true }, dp, opts)
-        all.push({ ...dyn, altitudeM: h })
+        const dyn = simulateDynamics({ ...input, aviation: true }, dp, opts, s.route)
+        all.push({ ...dyn, label: 'По маршруту' })
+      } else {
+        for (const h of heights) {
+          const dp: DynamicParams = { ...s.dynamicsParams, altitudeM: h }
+          const parsed = dynamicParamsSchema.safeParse(dp)
+          if (!parsed.success) {
+            all.push({
+              samples: [],
+              maxDopplerHz: 0,
+              minMarginDb: 0,
+              exitTimeS: null,
+              warnings: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
+              altitudeM: h,
+            })
+            continue
+          }
+          const dyn = simulateDynamics({ ...input, aviation: true }, dp, opts)
+          all.push({ ...dyn, altitudeM: h })
+        }
       }
       set({ dynamics: all[0] ?? null, dynamicsAll: all, fpsMeasured: null, animationAllowed: null })
     })

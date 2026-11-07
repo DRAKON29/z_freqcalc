@@ -148,15 +148,31 @@ export function tileElevation(tile: HgtTile, lat: number, lon: number): number {
   return top * (1 - dy) + bot * dy
 }
 
+/** Имя тайла SRTM 3" по координате: N/S + 2 знака широты + E/W + 3 знака долготы (N44E033). */
+export function tileNameAt(lat: number, lon: number): string {
+  const latFloor = Math.floor(lat)
+  const lonFloor = Math.floor(lon)
+  return `${latFloor < 0 ? 'S' : 'N'}${String(Math.abs(latFloor)).padStart(2, '0')}${lonFloor < 0 ? 'W' : 'E'}${String(Math.abs(lonFloor)).padStart(3, '0')}`
+}
+
+/** Имена тайлов, покрывающих трассу A→Б: сэмплирование прямой линии (~200 точек). */
+export function requiredTilesForTrack(a: LatLon, b: LatLon): string[] {
+  const N = 200
+  const found = new Set<string>()
+  for (let i = 0; i <= N; i++) {
+    const t = i / N
+    found.add(tileNameAt(a.lat + (b.lat - a.lat) * t, a.lon + (b.lon - a.lon) * t))
+  }
+  return [...found]
+}
+
 /** DEM из набора локальных тайлов .hgt. */
 export function createHgtDem(tiles: HgtTile[]): DemSource {
   return {
     name: `SRTM .hgt (${tiles.length} тайл.)`,
     resolutionM: tiles[0]?.stepDeg ? tiles[0].stepDeg * 111320 : 30,
     elevationAt(lat: number, lon: number): number {
-      const latFloor = Math.floor(lat)
-      const lonFloor = Math.floor(lon)
-      const want = `${latFloor < 0 ? 'S' : 'N'}${String(Math.abs(latFloor)).padStart(2, '0')}${lonFloor < 0 ? 'W' : 'E'}${String(Math.abs(lonFloor)).padStart(3, '0')}`
+      const want = tileNameAt(lat, lon)
       const tile = tiles.find((t) => t.name === want)
       if (!tile) return 0
       return tileElevation(tile, lat, lon)

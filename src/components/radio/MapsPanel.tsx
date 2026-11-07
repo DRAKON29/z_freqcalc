@@ -160,6 +160,9 @@ export function MapsPanel() {
   const demInfo = useRadioStore((s) => s.demInfo)
   const pointA = useRadioStore((s) => s.pointA)
   const pointB = useRadioStore((s) => s.pointB)
+  const backendAvailable = useRadioStore((s) => s.backendAvailable)
+  const srtmSync = useRadioStore((s) => s.srtmSync)
+  const fetchMissingSrtmTiles = useRadioStore((s) => s.fetchMissingSrtmTiles)
 
   // Цифровые продукты ITU (Table 3): сетки, ошибки, действия
   const ituGrids = useRadioStore((s) => s.ituGrids)
@@ -493,7 +496,7 @@ export function MapsPanel() {
             <p className="text-xs text-muted-foreground flex-1 min-w-[220px]">
               Активный источник: <Badge variant="secondary">{demInfo}</Badge>. Загрузите тайлы SRTM (.hgt) — они
               кэшируются в IndexedDB. Границы тайлов показаны на карте ниже; трасса A–Б — оранжевым пунктиром.
-              Автозагрузка Copernicus GLO-30 через прокси: GET /api/dem (http-режим).
+              Недостающие тайлы трассы подтягиваются с сервера автоматически при расчёте (http-режим).
             </p>
             <label className="inline-flex">
               <Input type="file" accept=".hgt" multiple className="hidden" onChange={(e) => e.target.files && void Promise.all(Array.from(e.target.files).map(uploadSrtm))} />
@@ -501,6 +504,24 @@ export function MapsPanel() {
                 <span><Upload className="h-4 w-4 mr-1" /> Загрузить SRTM .hgt</span>
               </Button>
             </label>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!backendAvailable || srtmSync !== null}
+              onClick={() =>
+                void fetchMissingSrtmTiles().then((r) =>
+                  setMessage(r.downloaded > 0 ? `Подтянуто тайлов с сервера: ${r.downloaded}` : null),
+                )
+              }
+              title="Скачает тайлы, покрывающие трассу A–Б, которых нет в кэше браузера"
+            >
+              <RefreshCw className="h-4 w-4 mr-1" /> Подтянуть тайлы трассы с сервера
+            </Button>
+            {srtmSync && (
+              <Badge variant="secondary" className="text-[10px]">
+                Подкачка тайлов: {srtmSync.done}/{srtmSync.total}
+              </Badge>
+            )}
           </div>
 
           {hgtTiles.length > 0 && (
