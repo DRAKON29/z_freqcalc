@@ -1,33 +1,171 @@
+# CI: сборка и полное тестирование на hosted runner'ах GitHub.
+# Пуш в dev_ / PR → lint + unit + pytest → docker build → E2E (Playwright против
+# полного стека) → публикация проверенных образов в ghcr.io (только push в dev_).
+# Деплой на сервер — отдельный workflow deploy.yml (self-hosted runner «prod»).
 name: CI
 
 on:
   push:
+    branches: ['dev_', 'main']
   pull_request:
+    branches: ['dev_']
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_BACKEND: ghcr.io/${{ github.repository }}-backend
+  IMAGE_FRONTEND: ghcr.io/${{ github.repository }}-frontend
 
 jobs:
-  tests:
+  test:
+    name: lint + unit + pytest
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - name: Install dependencies
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Зависимости (bun)
         run: bun install --frozen-lockfile || bun install
-      - name: Lint
+      - name: ESLint
         run: bun run lint
-      - name: Unit tests (TS core)
+      - name: Юнит-тесты TS-ядра
         run: bun test tests/
+      - name: Зависимости Python
+        run: |
+          cd mini-services/radio-service
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest httpx
+      - name: Тесты Python (формулы + API)
+        working-directory: mini-services/radio-service
+        run: python -m pytest tests/ -q
 
-  backend:
+  build:
+    name: docker build образов
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.backend
+          push: false
+          tags: radio-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.frontend
+          push: false
+          tags: radio-frontend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  e2e:
+    name: E2E (Playwright против полного стека)
+    runs-on: ubuntu-latest
+    needs: [test, build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-      - name: Install service dependencies
-        run: pip install -r mini-services/radio-service/requirements.txt pytest
-      - name: Unit tests (formulas)
-        working-directory: mini-services/radio-service
-        run: python3 -m pytest tests/ -q
+          python-version: '3.12'
+      - name: Python-сервис
+        run: |
+          cd mini-services/radio-service
+          python -m pip install -r requirements.txt
+          nohup python -m uvicorn main:app --host 127.0.0.1 --port 8000 > uvicorn.log 2>&1 &
+      - name: Зависимости (bun)
+        run: bun install --frozen-lockfile || bun install
+      - name: Сборка фронтенда
+        run: bun run build
+        env:
+          NEXT_PUBLIC_API_BASE: http://127.0.0.1:8000/api
+      - name: Старт фронтенда (standalone)
+        run: |
+          cd .next/standalone
+          HOSTNAME=0.0.0.0 nohup node server.js > server.log 2>&1 &
+      - name: Ожидание готовности стека
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8000/api/health >/dev/null && curl -sf -o /dev/null http://127.0.0.1:3000; then
+              echo "READY"; exit 0
+            fi
+            sleep 2
+          done
+          echo "Стек не поднялся"; tail -30 mini-services/radio-service/uvicorn.log .next/standalone/server.log 2>/dev/null; exit 1
+      - name: Playwright браузер
+        run: bunx playwright install --with-deps chromium
+      - name: E2E-тесты
+        run: bunx playwright test
+        env:
+          E2E_BASE_URL: http://localhost:3000
+      - name: Артефакты падений
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            test-results/
+            e2e-report/
+          retention-days: 7
+
+  publish:
+    name: публикация образов в ghcr.io
+    runs-on: ubuntu-latest
+    needs: [e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev_'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Логин в ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Теги backend (sha-… + latest)
+        id: meta_backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_BACKEND }}
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=latest
+      - name: Push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.backend
+          push: true
+          tags: ${{ steps.meta_backend.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Теги frontend (sha-… + latest)
+        id: meta_frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_FRONTEND }}
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=latest
+      - name: Push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.frontend
+          push: true
+          tags: ${{ steps.meta_frontend.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

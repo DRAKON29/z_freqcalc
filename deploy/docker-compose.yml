@@ -4,6 +4,9 @@
 
 services:
   backend:
+    # Образ публикуется CI после прохождения всех проверок (ghcr.io);
+    # build: сохранён для локальной сборки без CI
+    image: ghcr.io/drakon29/z_freqcalc-backend:latest
     build:
       context: ..
       dockerfile: deploy/Dockerfile.backend
@@ -23,6 +26,7 @@ services:
       - "127.0.0.1:8000:8000"
 
   frontend:
+    image: ghcr.io/drakon29/z_freqcalc-frontend:latest
     build:
       context: ..
       dockerfile: deploy/Dockerfile.frontend

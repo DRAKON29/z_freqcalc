@@ -65,3 +65,7 @@ mini-services/radio-service/data/history/*.db
 db/custom.db
 mini-services/radio-service/data/itu_maps/*
 !mini-services/radio-service/data/itu_maps/test-map.txt
+# Playwright E2E
+/test-results/
+/e2e-report/
+playwright-report/
