@@ -1,15 +1,20 @@
 /**
  * Динамические (летающие) объекты:
- *  • прямолинейная траектория с постоянной скоростью;
- *  • изменение углов места/азимута во времени;
- *  • доплеровский сдвиг Δf = (v_r / c) · f;
- *  • обязательный учёт доплера в бюджете линии;
- *  • предупреждение при выходе из зоны связи.
+ *  • прямолинейная траектория с постоянной скоростью или маршрут из файла;
+ *  • потери по профилю рельефа для каждого сэмпла (FSPL + P.526 дифракция
+ *    + clutter + газы — та же медианная цепочка, что в статике; роадмап 2.2);
+ *  • наведение антенн по текущему углу места: ошибка = |el(t) − initialElevationDeg|;
+ *  • доплеровский сдвиг Δf = (v_r / c) · f с обязательным учётом в бюджете;
+ *  • предупреждение при выходе из зоны связи и вне тайлов рельефа.
  */
-import { C_LIGHT, MODULATIONS } from './constants'
+import { C_LIGHT, KTB_DBM_HZ, LIMITS, MODULATIONS } from './constants'
 import { destination, bearingDeg, distanceM } from './coordinates'
-import { fsplDb } from './fspl'
 import { routeStateAt, routeDurationS } from './route'
+import { fsplDb } from './fspl'
+import { gasesLossDb } from './atmosphere'
+import { buildProfile, pointInTiles, type DemSource, type HgtTile } from './terrain'
+import { medianMechanismsLossDb } from './p2001lite'
+import { pointingLossDb } from './budget'
 import type { CalculationInput, DynamicParams, DynamicSample, DynamicsResult, RouteData } from './types'
 
 /** Допустимый доплеровский сдвиг для модуляции (доля от символьной скорости).
@@ -34,33 +39,52 @@ export function dopplerLossDb(dopplerHz: number, bandwidthHz: number, modulation
   return Math.min(30, 0.5 * Math.ceil((abs - tol) / (tol / 2) * 2) / 2)
 }
 
-/** Медианная высота рельефа под объектом (для зоны связи) — упрощённо 0. */
+/** Угол места на объект с антенны Tx, град (геометрия, без рельефа). */
 function elevationAngleDeg(hTx: number, hAirM: number, dGroundM: number): number {
   const dTotal = Math.hypot(dGroundM, hAirM - hTx)
   if (dTotal === 0) return 90
   return Math.atan2(hAirM - hTx, dGroundM) * (180 / Math.PI)
 }
 
+/** Параметры расчёта динамики (роадмап 2.2: рельеф per-sample + ДН по углу места). */
+export interface DynamicsOpts {
+  powerDbm: number
+  txGainDbi: number
+  rxGainDbi: number
+  sensitivityDbm: number
+  noiseBandwidthHz: number
+  noiseFigureDb: number
+  modulation: keyof typeof MODULATIONS
+  /** Ширины луча и УБЛ антенн: потери наведения = f(|el(t) − initialElevationDeg|) */
+  txBeamwidthDeg?: number
+  txSidelobeDb?: number
+  rxBeamwidthDeg?: number
+  rxSidelobeDb?: number
+  /** Рельеф и clutter для построения профиля Tx→позиция на каждом сэмпле */
+  dem: DemSource
+  clutterAt?: (lat: number, lon: number) => { type: string; height: number } | null
+  /** Тайлы рельефа — для предупреждения о непокрытой траектории */
+  hgtTiles?: HgtTile[]
+  onProgress?: (done: number, total: number) => void
+}
+
 /**
  * Расчёт динамики: объект стартует в точке A (над Tx) и движется по азимуту
  * траектории с постоянной скоростью на постоянной высоте. При заданном route
  * движение — по ломаной из файла траектории: позиция, высота и скорость
- * меняются по участкам (смотр. route.ts).
+ * меняются по участкам (см. route.ts).
+ *
+ * Потери для каждого сэмпла — медианная цепочка статической модели по профилю
+ * рельефа Tx→позиция (FSPL + P.526 + clutter + газы); растительность не
+ * применяется (борт выше препятствий — сигнал проходит над лесом). Функция
+ * асинхронная: уступает поток UI для прогресса.
  */
-export function simulateDynamics(
+export async function simulateDynamics(
   input: CalculationInput,
   params: DynamicParams,
-  opts: {
-    powerDbm: number
-    txGainDbi: number
-    rxGainDbi: number
-    sensitivityDbm: number
-    noiseBandwidthHz: number
-    noiseFigureDb: number
-    modulation: keyof typeof MODULATIONS
-  },
+  opts: DynamicsOpts,
   route?: RouteData | null,
-): DynamicsResult {
+): Promise<DynamicsResult> {
   const freqMhz = input.frequencyMhz
   const speedMs = params.speedKmh / 3.6
   const warnings: string[] = []
@@ -69,11 +93,11 @@ export function simulateDynamics(
     const speeds = route.points.map((p) => p.speedKmh)
     const vMin = Math.min(...speeds)
     const vMax = Math.max(...speeds)
-    if (vMin < 100 || vMax > 200) {
-      warnings.push(`Путевые скорости точек маршрута ${vMin}–${vMax} км/ч вне диапазона 100–200 км/ч`)
+    if (vMin < LIMITS.speedMinKmh || vMax > LIMITS.speedMaxKmh) {
+      warnings.push(`Путевые скорости точек маршрута ${vMin}–${vMax} км/ч вне диапазона ${LIMITS.speedMinKmh}–${LIMITS.speedMaxKmh} км/ч`)
     }
-  } else if (params.speedKmh < 100 || params.speedKmh > 200) {
-    warnings.push(`Путевая скорость ${params.speedKmh} км/ч вне диапазона 100–200 км/ч`)
+  } else if (params.speedKmh < LIMITS.speedMinKmh || params.speedKmh > LIMITS.speedMaxKmh) {
+    warnings.push(`Путевая скорость ${params.speedKmh} км/ч вне диапазона ${LIMITS.speedMinKmh}–${LIMITS.speedMaxKmh} км/ч`)
   }
 
   const durationS = route ? routeDurationS(route) : params.durationS
@@ -86,6 +110,8 @@ export function simulateDynamics(
   let maxDopplerHz = 0
   let minMarginDb = Infinity
   let exitTimeS: number | null = null
+  let outsideTiles = 0
+  let tileChecks = 0
 
   for (let i = 0; i <= nSteps; i++) {
     const t = i * dt
@@ -126,18 +152,52 @@ export function simulateDynamics(
     // Доплер: Δf = (v_r / c) · f
     const dopplerHz = (radialMs / C_LIGHT) * (freqMhz * 1e6)
 
-    // Потери: FSPL по наклонной дальности (в динамике рельеф по трассе не учитываем,
-    // объект в воздухе — прямой визири; точная модель дифракции выполняется в основном расчёте)
-    const lossDb = fsplDb(slantM, freqMhz) + (input.atmosphere.gases ? 1.5 : 0)
+    // Потери по профилю рельефа Tx→текущая позиция (роадмап 2.2): FSPL + P.526
+    // дифракция + clutter + газы — та же медианная цепочка, что в статике.
+    // Растительность исключена: борт выше препятствий, сигнал проходит над лесом.
+    const profile = buildProfile(tx, pos, opts.dem, opts.clutterAt)
+    const sampleInput: CalculationInput = {
+      ...input,
+      rxHeightM: Math.max(1, altM - (profile[profile.length - 1]?.elev ?? 0)),
+      atmosphere: { ...input.atmosphere, vegetation: false },
+      path: {
+        points: [tx, pos],
+        // FSPL и газы — по наклонной дальности (истинная длина воздушного пути),
+        // профиль дифракции — по земле (расстояния профиля — ground distance)
+        distanceM: slantM,
+        azimuthDeg: bearingDeg(tx, pos),
+        profile,
+        demStepM: input.path.demStepM,
+        demSource: input.path.demSource,
+      },
+    }
+    // На вырожденных дистанциях (старт строго над станцией) профиль не строится —
+    // чистый FSPL по наклонной дальности
+    const lossDb =
+      dGround > 10
+        ? medianMechanismsLossDb(sampleInput).lossDb
+        : fsplDb(slantM, freqMhz) + (input.atmosphere.gases ? gasesLossDb(slantM, freqMhz, 90) : 0)
+
+    // Наведение антенн по текущему углу места: номинал — initialElevationDeg
+    // (угол на объект в начале полёта); omni (≥180°) — наведения нет
+    const pointErrDeg = Math.abs(elevDeg - params.initialElevationDeg)
+    const txPointing = pointingLossDb(opts.txBeamwidthDeg, opts.txSidelobeDb, pointErrDeg)
+    const rxPointing = pointingLossDb(opts.rxBeamwidthDeg, opts.rxSidelobeDb, pointErrDeg)
 
     const eirp = opts.powerDbm + opts.txGainDbi
-    const prx = eirp - lossDb + opts.rxGainDbi
-    const noise = 10 * Math.log10(1.380649e-23 * 290 * 1e3) + 10 * Math.log10(opts.noiseBandwidthHz) + opts.noiseFigureDb
+    const prx = eirp - txPointing - lossDb + opts.rxGainDbi - rxPointing
+    const noise = KTB_DBM_HZ + 10 * Math.log10(opts.noiseBandwidthHz) + opts.noiseFigureDb
     const snrDb = prx - noise
     const dopLoss = dopplerLossDb(dopplerHz, opts.noiseBandwidthHz, opts.modulation)
     const marginDb = snrDb - dopLoss - MODULATIONS[opts.modulation].ebN0Db
 
     const inZone = prx >= opts.sensitivityDbm && marginDb > 0
+
+    // Покрытие траектории тайлами рельефа
+    if (opts.hgtTiles && opts.hgtTiles.length > 0) {
+      tileChecks++
+      if (!pointInTiles(pos.lat, pos.lon, opts.hgtTiles)) outsideTiles++
+    }
 
     samples.push({
       t,
@@ -157,8 +217,19 @@ export function simulateDynamics(
     maxDopplerHz = Math.max(maxDopplerHz, Math.abs(dopplerHz))
     minMarginDb = Math.min(minMarginDb, marginDb)
     if (!inZone && exitTimeS === null) exitTimeS = t
-  }
 
+    // Уступаем поток UI для прогресса (расчёт тяжёлый: профиль + дифракция на сэмпл)
+    if (i % 20 === 19) {
+      opts.onProgress?.(i + 1, nSteps + 1)
+      await new Promise((r) => setTimeout(r, 0))
+    }
+  }
+  opts.onProgress?.(nSteps + 1, nSteps + 1)
+
+  if (tileChecks > 0 && outsideTiles / tileChecks > 0.01) {
+    const pct = Math.round((outsideTiles / tileChecks) * 100)
+    warnings.push(`Часть траектории (${pct}% сэмплов) вне загруженных тайлов рельефа — там высота принята 0 м`)
+  }
   if (exitTimeS !== null) {
     const pathKm = route ? null : (exitTimeS * speedMs) / 1000
     warnings.push(

@@ -18,7 +18,7 @@ import {
   esModeMufMhz,
   tropoZoneMultiplier,
 } from './itu-env'
-import type { CalculationInput, PropagationResult, TimePercentLoss } from './types'
+import type { CalculationInput, MechanismBreakdown, PropagationResult, TimePercentLoss } from './types'
 
 export interface ClutterEdge {
   d: number
@@ -140,12 +140,45 @@ export function clutterLosses(
   return { diffractionDb, vegetationDb, hasBuilding, hasVegetation }
 }
 
+/**
+ * Медианные потери «FSPL + P.526 + clutter + растительность + газы» —
+ * единый источник для статического расчёта (computeFsplP526) и динамики
+ * (per-sample, роадмап 2.2). Без дождя (механизм процентного времени)
+ * и предупреждений.
+ */
+export function medianMechanismsLossDb(input: CalculationInput): { lossDb: number; breakdown: MechanismBreakdown } {
+  const freq = input.frequencyMhz
+  const { lossDb, fspl, diffraction, scatter } = medianLossFsplP526(input)
+  const cl = clutterLosses(input)
+  const env = input.environment
+
+  let gasesDb = 0
+  if (input.atmosphere.gases) {
+    // ρ из карты Surfwv_50_fixed (P.836-4), давление — ручное/стандартное
+    gasesDb = Math.max(0, gasesLossDb(input.path.distanceM, freq, 5, {
+      waterVaporGM3: env?.rho50,
+      pressureHPa: input.atmosphere.pressureHPa,
+      temperatureK: input.atmosphere.temperatureK,
+    }))
+  }
+
+  return {
+    lossDb: lossDb + cl.diffractionDb + cl.vegetationDb + gasesDb,
+    breakdown: {
+      freeSpaceDb: fspl,
+      diffractionDb: diffraction + cl.diffractionDb,
+      troposcatterDb: scatter,
+      gasesDb: gasesDb || undefined,
+      vegetationDb: cl.vegetationDb || undefined,
+    },
+  }
+}
+
 /** Полный расчёт «FSPL + P.526». */
 export function computeFsplP526(input: CalculationInput): PropagationResult {
   const warnings: string[] = []
   const freq = input.frequencyMhz
-  const { lossDb, fspl, diffraction, scatter } = medianLossFsplP526(input)
-  const cl = clutterLosses(input)
+  const { lossDb, breakdown } = medianMechanismsLossDb(input)
   const env = input.environment
 
   let rainDb = 0
@@ -159,30 +192,19 @@ export function computeFsplP526(input: CalculationInput): PropagationResult {
       warnings.push('Дождь из карты ITU (R0.01) учтён в хвосте распределения по процентам времени; медиана (50 %) — без дождя')
     }
   }
-  let gasesDb = 0
-  if (input.atmosphere.gases) {
-    // ρ из карты Surfwv_50_fixed (P.836-4), давление — ручное/стандартное
-    gasesDb = gasesLossDb(input.path.distanceM, freq, 5, {
-      waterVaporGM3: env?.rho50,
-      pressureHPa: input.atmosphere.pressureHPa,
-      temperatureK: input.atmosphere.temperatureK,
-    })
-    if (gasesDb <= 0) warnings.push('Упрощённая модель газов P.676 применима до 57 ГГц — вклад не учтён')
+  if (input.atmosphere.gases && (breakdown.gasesDb ?? 0) <= 0) {
+    warnings.push('Упрощённая модель газов P.676 применима до 57 ГГц — вклад не учтён')
   }
 
-  const medianLossDb = lossDb + cl.diffractionDb + cl.vegetationDb + rainDb + gasesDb
+  const medianLossDb = lossDb + rainDb
 
   return {
     model: 'fspl-p526',
     medianLossDb,
     byTimePercent: [{ percent: 50, lossDb: medianLossDb }],
     breakdown: {
-      freeSpaceDb: fspl,
-      diffractionDb: diffraction + cl.diffractionDb,
-      troposcatterDb: scatter,
+      ...breakdown,
       rainDb: rainDb || undefined,
-      gasesDb: gasesDb || undefined,
-      vegetationDb: cl.vegetationDb || undefined,
     },
     engineUsed: 'TS: FSPL (P.525) + P.526 + P.838/P.676/P.833',
     warnings,

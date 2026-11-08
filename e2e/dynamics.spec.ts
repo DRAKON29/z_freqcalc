@@ -31,3 +31,23 @@ test('переключатель нескольких высот добавля�
   await expect(heightInputs.first()).toHaveValue('500')
   await expect(heightInputs.nth(1)).toHaveValue('1000')
 })
+
+test('динамика 2.2: рельеф per-sample, скорости 0–300, прогресс расчёта', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Рассчитать', exact: true }).click()
+  await expect(page.getByText('173.0 дБ').first()).toBeVisible({ timeout: 20000 })
+
+  await page.getByRole('tab', { name: 'Динамика' }).click()
+  // Подпись скорости из LIMITS (0–300), поле номинального угла места присутствует
+  await expect(page.getByText(/Путевая скорость, км\/ч \(0–300\)/).first()).toBeVisible()
+  await expect(page.getByLabel('Номинальный угол места антенн, °')).toBeVisible()
+  // Сноска о рельефе per-sample
+  await expect(page.getByText(/Потери считаются по профилю рельефа/).first()).toBeVisible()
+
+  // Скорость 300 км/ч — расчёт проходит с прогрессом
+  await page.getByLabel(/Путевая скорость/).first().fill('300')
+  await page.getByRole('button', { name: 'Рассчитать динамику' }).click()
+  await expect(page.getByText('Макс. доплер').first()).toBeVisible({ timeout: 60000 })
+  await expect(page.getByText(/1 \/ 301/)).toBeVisible()
+  await expect(page.getByText('ОСШ (SNR) и запас (link margin)')).toBeVisible()
+})

@@ -3,6 +3,7 @@ import { describe, it, expect } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseRouteFile, routeDurationS, routeStateAt } from '../src/lib/radio/route'
+import { createSyntheticDem } from '../src/lib/radio/terrain'
 import { simulateDynamics } from '../src/lib/radio/doppler'
 import { destination } from '../src/lib/radio/coordinates'
 import type { CalculationInput, DynamicParams, RouteData } from '../src/lib/radio/types'
@@ -17,6 +18,8 @@ const opts = {
   noiseBandwidthHz: 1e6,
   noiseFigureDb: 3,
   modulation: 'QPSK' as const,
+  // Рельеф per-sample (роадмап 2.2): синтетический DEM детерминирован
+  dem: createSyntheticDem(),
 }
 
 const A = { lat: 55.7558, lon: 37.6173 }
@@ -168,7 +171,7 @@ describe('Состояние на маршруте (routeStateAt)', () => {
     expect(stT.altitudeM).toBe(1046)
   })
 
-  it('в середине обратного участка доплер меняет знак (движение к Tx)', () => {
+  it('в середине обратного участка доплер меняет знак (движение к Tx)', async () => {
     // Туда (10 км) и обратно к Tx: на обратном пути радиальная скорость отрицательна
     const p1 = destination(A, 10000, 90)
     const p2 = destination(A, 20000, 90)
@@ -181,7 +184,7 @@ describe('Состояние на маршруте (routeStateAt)', () => {
         { ...p1, altitudeM: 500, speedKmh: 150 },
       ],
     }
-    const dyn = simulateDynamics(makeInput(), makeParams(), opts, route)
+    const dyn = await simulateDynamics(makeInput(), makeParams(), opts, route)
     // Чуть после старта — удаляемся (в t=0 луч вертикальный и радиальная скорость нулевая)
     const first = dyn.samples[Math.min(5, dyn.samples.length - 1)].dopplerHz
     const last = dyn.samples[dyn.samples.length - 1].dopplerHz
@@ -191,11 +194,11 @@ describe('Состояние на маршруте (routeStateAt)', () => {
 })
 
 describe('Динамика по маршруту', () => {
-  it('коллинеарный маршрут с постоянной скоростью/высотой совпадает с прямой моделью', () => {
+  it('коллинеарный маршрут с постоянной скоростью/высотой совпадает с прямой моделью', async () => {
     const route = straightRoute()
     const params = makeParams()
-    const direct = simulateDynamics(makeInput(), params, opts)
-    const viaRoute = simulateDynamics(makeInput(), params, opts, route)
+    const direct = await simulateDynamics(makeInput(), params, opts)
+    const viaRoute = await simulateDynamics(makeInput(), params, opts, route)
     expect(viaRoute.samples.length).toBe(direct.samples.length)
     for (let i = 0; i < direct.samples.length; i++) {
       const a = direct.samples[i]
@@ -207,26 +210,26 @@ describe('Динамика по маршруту', () => {
     }
   })
 
-  it('сэмплы маршрута несут переменные высоту и скорость', () => {
+  it('сэмплы маршрута несут переменные высоту и скорость', async () => {
     const res = parseRouteFile(sampleText)
     if (!res.ok) throw new Error('образец не разобран')
-    const dyn = simulateDynamics(makeInput(), makeParams(), opts, res.data)
+    const dyn = await simulateDynamics(makeInput(), makeParams(), opts, res.data)
     expect(dyn.samples[0].altitudeM).toBe(204)
     expect(dyn.samples[0].speedKmh).toBe(120)
     // На последнем участке скорость 130
     expect(dyn.samples[dyn.samples.length - 1].speedKmh).toBe(130)
     // Прямая ветка — поля не заполнены
-    const direct = simulateDynamics(makeInput(), makeParams(), opts)
+    const direct = await simulateDynamics(makeInput(), makeParams(), opts)
     expect(direct.samples[0].altitudeM).toBeUndefined()
     expect(direct.samples[0].speedKmh).toBeUndefined()
   })
 
-  it('скорость точек вне 100–200 км/ч даёт предупреждение', () => {
+  it('скорость точек вне 0–300 км/ч даёт предупреждение', async () => {
     const route: RouteData = {
       tripodHeightM: 4,
-      points: [0, 1, 2, 3].map((i) => ({ lat: 50 + i * 0.01, lon: 36, altitudeM: 500, speedKmh: i === 1 ? 60 : 150 })),
+      points: [0, 1, 2, 3].map((i) => ({ lat: 50 + i * 0.01, lon: 36, altitudeM: 500, speedKmh: i === 1 ? 400 : 150 })),
     }
-    const dyn = simulateDynamics(makeInput(), makeParams(), opts, route)
-    expect(dyn.warnings.some((w) => w.includes('вне диапазона 100–200'))).toBe(true)
+    const dyn = await simulateDynamics(makeInput(), makeParams(), opts, route)
+    expect(dyn.warnings.some((w) => w.includes('вне диапазона 0–300'))).toBe(true)
   })
 })

@@ -30,7 +30,7 @@ import {
 import { FPS_THRESHOLD, LIMITS } from '@/lib/radio/constants'
 import { bearingDeg, distanceM } from '@/lib/radio/coordinates'
 import { routeDurationS } from '@/lib/radio/route'
-import { Play, Timer, Plane, Route, Plus, X, Upload } from 'lucide-react'
+import { Play, Timer, Plane, Route, Plus, X, Upload, Loader2 } from 'lucide-react'
 
 const ALT_COLORS = ['#0f766e', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#65a30d', '#db2777', '#475569']
 
@@ -58,6 +58,7 @@ export function DynamicsPanel() {
   const pointA = useRadioStore((s) => s.pointA)
   const pointB = useRadioStore((s) => s.pointB)
   const lastError = useRadioStore((s) => s.lastError)
+  const dynamicsProgress = useRadioStore((s) => s.dynamicsProgress)
 
   const isMulti = altitudeMode === 'multi'
   const [routeError, setRouteError] = useState<string | null>(null)
@@ -101,7 +102,7 @@ export function DynamicsPanel() {
   ) => (
     <div>
       <Label className="text-xs">{label}</Label>
-      <Input type="number" value={value} min={min} max={max} onChange={(e) => onChange(Number(e.target.value))} />
+      <Input aria-label={label} type="number" value={value} min={min} max={max} onChange={(e) => onChange(Number(e.target.value))} />
     </div>
   )
 
@@ -283,9 +284,21 @@ export function DynamicsPanel() {
           </>
           )}
 
+          {/* Номинальный угол места антенн — точка отсчёта наведения по углу места */}
+          <div className="grid gap-3 sm:grid-cols-3">
+            {num('Номинальный угол места антенн, °', 'initialElevationDeg', dp.initialElevationDeg, (v) => setDp({ initialElevationDeg: v }), -30, 90)}
+          </div>
+
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={runDynamics} disabled={!result}>
-              <Play className="h-4 w-4 mr-1" /> Рассчитать динамику
+            <Button size="sm" onClick={runDynamics} disabled={!result || !!dynamicsProgress}>
+              {dynamicsProgress ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4 mr-1" />
+              )}
+              {dynamicsProgress
+                ? `Расчёт динамики… ${dynamicsProgress.done}/${dynamicsProgress.total}`
+                : 'Рассчитать динамику'}
             </Button>
             {dynamics && animationAllowed !== false && (
               <Button size="sm" variant="outline" onClick={() => setField('animationAllowed', true)}>
@@ -294,6 +307,13 @@ export function DynamicsPanel() {
             )}
             {!result && <p className="text-xs text-muted-foreground">Сначала выполните расчёт на вкладке «Расчёт».</p>}
           </div>
+          <p className="text-[11px] text-muted-foreground">
+            Потери считаются по профилю рельефа между станцией и текущей позицией объекта для каждого сэмпла
+            (FSPL + P.526 дифракция + buildings + газы); растительность не применяется — сигнал проходит над лесом.
+            Наведение антенн — по текущему углу места: ошибка = |угол места(t) − номинальный угол| (задаётся
+            «Начальный угол места»); для всенаправленных антенн (луч ≥ 180°) наведения нет. Подкачка тайлов рельефа
+            вдоль траектории выполняется автоматически.
+          </p>
           {dynamics && fpsMeasured !== null && (
             <p className="text-xs text-muted-foreground">
               Измеренный FPS анимации: <span className="font-medium">{fpsMeasured}</span> (порог {FPS_THRESHOLD}).

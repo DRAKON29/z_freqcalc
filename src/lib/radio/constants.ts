@@ -27,8 +27,8 @@ export const MODULATIONS: Record<ModulationId, { ebN0Db: number; bitsPerSymbol: 
 export const LIMITS = {
   frequencyMinMhz: 500,
   frequencyMaxMhz: 7000,
-  speedMinKmh: 100,
-  speedMaxKmh: 200,
+  speedMinKmh: 0,
+  speedMaxKmh: 300,
   ituMapMaxFileBytes: 700 * 1024 * 1024, // 700 МБ на файл
   ituMapMaxZipBytes: 1024 * 1024 * 1024, // 1 ГБ на zip
 }

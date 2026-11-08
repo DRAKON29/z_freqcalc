@@ -166,6 +166,23 @@ export function requiredTilesForTrack(a: LatLon, b: LatLon): string[] {
   return [...found]
 }
 
+/**
+ * Имена тайлов, покрывающих ломаную траекторию (маршрут UAV): сэмплирование
+ * каждого колена (по ~60 точек на 1° дуги колена, ≥ 40 на колено) с дедупликацией.
+ */
+export function requiredTilesForPolyline(points: LatLon[], perLegSamples = 60): string[] {
+  const found = new Set<string>()
+  for (let leg = 1; leg < points.length; leg++) {
+    const a = points[leg - 1]
+    const b = points[leg]
+    for (let i = 0; i <= perLegSamples; i++) {
+      const t = i / perLegSamples
+      found.add(tileNameAt(a.lat + (b.lat - a.lat) * t, a.lon + (b.lon - a.lon) * t))
+    }
+  }
+  return [...found]
+}
+
 /** DEM из набора локальных тайлов .hgt. */
 export function createHgtDem(tiles: HgtTile[]): DemSource {
   return {

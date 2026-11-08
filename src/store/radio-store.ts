@@ -189,6 +189,8 @@ export interface RadioState {
   dynamicsAll: DynamicsResult[]
   fpsMeasured: number | null
   animationAllowed: boolean | null
+  /** Прогресс расчёта динамики (per-sample рельеф — тяжёлый) */
+  dynamicsProgress: { done: number; total: number } | null
 
   // Действия
   setPointA: (p: LatLon) => void
@@ -200,8 +202,8 @@ export interface RadioState {
   setBackend: (b: BackendId) => void
   setHgtTiles: (tiles: HgtTile[]) => void
   addHgtTile: (buffer: ArrayBuffer, filename: string) => string | null
-  /** Докачка с сервера тайлов SRTM, покрывающих трассу, которых нет в кэше браузера. */
-  fetchMissingSrtmTiles: () => Promise<{ downloaded: number }>
+  /** Докачка с сервера тайлов SRTM (ломаная траектория либо прямая A→Б), которых нет в кэше браузера. */
+  fetchMissingSrtmTiles: (points?: LatLon[]) => Promise<{ downloaded: number }>
   setClutter: (gj: ClutterGeoJson | null) => void
   setAltitudes: (list: number[]) => void
   /** Разбор и добавление продукта ITU (после сохранения в кэш IndexedDB). */
@@ -217,7 +219,7 @@ export interface RadioState {
   clearRoute: () => void
   checkBackend: () => Promise<boolean>
   calculate: () => Promise<void>
-  runDynamics: () => void
+  runDynamics: () => Promise<void>
   resetResults: () => void
 }
 
@@ -286,6 +288,7 @@ export const useRadioStore = create<RadioState>((set, get) => ({
   dynamicsAll: [],
   fpsMeasured: null,
   animationAllowed: null,
+  dynamicsProgress: null,
 
   setPointA: (p) => set({ pointA: p }),
   setPointB: (p) => set({ pointB: p }),
@@ -317,10 +320,10 @@ export const useRadioStore = create<RadioState>((set, get) => ({
 
   /** Докачка с сервера тайлов SRTM, покрывающих трассу A–Б, которых нет в кэше браузера.
    *  Тихая при недоступности бэкенда/IndexedDB; ошибки отдельных тайлов пропускаются. */
-  fetchMissingSrtmTiles: async () => {
+  fetchMissingSrtmTiles: async (points) => {
     const s = get()
     if (s.backendAvailable !== true) return { downloaded: 0 }
-    const [{ requiredTilesForTrack }, { listSrtmTiles, putSrtmTile }, { apiUrl }] = await Promise.all([
+    const [{ requiredTilesForTrack, requiredTilesForPolyline }, { listSrtmTiles, putSrtmTile }, { apiUrl }] = await Promise.all([
       import('@/lib/radio/terrain'),
       import('@/lib/radio/history'),
       import('@/lib/radio/models/api'),
@@ -333,7 +336,9 @@ export const useRadioStore = create<RadioState>((set, get) => ({
       return { downloaded: 0 }
     }
     const haveSet = new Set(have)
-    const missing = requiredTilesForTrack(s.pointA, s.pointB).filter((n) => !haveSet.has(n))
+    // Трек: явная ломаная (траектория динамики) либо прямая A→Б
+    const tiles = points && points.length > 1 ? requiredTilesForPolyline(points) : requiredTilesForTrack(s.pointA, s.pointB)
+    const missing = tiles.filter((n) => !haveSet.has(n))
     if (missing.length === 0) return { downloaded: 0 }
 
     set({ srtmSync: { done: 0, total: missing.length } })
@@ -714,27 +719,51 @@ export const useRadioStore = create<RadioState>((set, get) => ({
     }
   },
 
-  runDynamics: () => {
+  runDynamics: async () => {
     const s = get()
     if (!s.result || !s.budget) return
     const input = s.lastInput ?? buildInput(s)
+    set({ dynamicsProgress: { done: 0, total: 0 }, dynamics: null, dynamicsAll: [] })
 
-    // Список высот: одна или несколько
-    const heights = s.altitudeMode === 'multi'
-      ? Array.from(new Set(s.altitudes.map((a) => Math.round(a))))
-      : [s.dynamicsParams.altitudeM]
+    try {
+      // Список высот: одна или несколько
+      const heights = s.altitudeMode === 'multi'
+        ? Array.from(new Set(s.altitudes.map((a) => Math.round(a))))
+        : [s.dynamicsParams.altitudeM]
 
-    const opts = {
-      powerDbm: s.equipment.transmitter.powerDbm,
-      txGainDbi: s.equipment.tx.gainDbi,
-      rxGainDbi: s.equipment.rx.gainDbi,
-      sensitivityDbm: s.equipment.receiver.sensitivityDbm,
-      noiseBandwidthHz: s.equipment.receiver.noiseBandwidthHz ?? 1e6,
-      noiseFigureDb: s.equipment.receiver.noiseFigureDb ?? 3,
-      modulation: (s.equipment.receiver.modulation ?? 'QPSK') as 'BPSK' | 'QPSK' | '16QAM' | '64QAM',
-    }
+      // Точки траектории для подкачки тайлов рельефа: маршрут из файла — ломаная
+      // по путевым точкам; ручной режим — прямая по азимуту на всю длительность
+      const { trajectoryPoints } = await import('@/lib/radio/doppler')
+      const trajPts = s.route
+        ? s.route.points.map((p) => ({ lat: p.lat, lon: p.lon }))
+        : trajectoryPoints(s.pointA, s.dynamicsParams)
+      await get().fetchMissingSrtmTiles(trajPts)
 
-    import('@/lib/radio/doppler').then(({ simulateDynamics }) => {
+      const sNow = get()
+      const dem = sNow.hgtTiles.length > 0 ? createHgtDem(sNow.hgtTiles) : createSyntheticDem()
+      const clutterAt = sNow.clutter ? makeClutterSampler(sNow.clutter) : undefined
+
+      const opts = {
+        powerDbm: s.equipment.transmitter.powerDbm,
+        txGainDbi: s.equipment.tx.gainDbi,
+        rxGainDbi: s.equipment.rx.gainDbi,
+        sensitivityDbm: s.equipment.receiver.sensitivityDbm,
+        noiseBandwidthHz: s.equipment.receiver.noiseBandwidthHz ?? 1e6,
+        noiseFigureDb: s.equipment.receiver.noiseFigureDb ?? 3,
+        modulation: (s.equipment.receiver.modulation ?? 'QPSK') as 'BPSK' | 'QPSK' | '16QAM' | '64QAM',
+        // Наведение по углу места (роадмап 2.2): ширины луча/УБЛ из антенн
+        txBeamwidthDeg: s.equipment.tx.beamwidthDeg,
+        txSidelobeDb: s.equipment.tx.sidelobeDb,
+        rxBeamwidthDeg: s.equipment.rx.beamwidthDeg,
+        rxSidelobeDb: s.equipment.rx.sidelobeDb,
+        // Рельеф per-sample
+        dem,
+        clutterAt,
+        hgtTiles: sNow.hgtTiles,
+        onProgress: (done: number, total: number) => set({ dynamicsProgress: { done, total } }),
+      }
+
+      const { simulateDynamics } = await import('@/lib/radio/doppler')
       const all: DynamicsResult[] = []
       if (s.route) {
         // Маршрут из файла: один прогон, высота/скорость/длительность из файла
@@ -743,7 +772,7 @@ export const useRadioStore = create<RadioState>((set, get) => ({
           altitudeM: s.route.points[0].altitudeM,
           durationS: routeDurationS(s.route),
         }
-        const dyn = simulateDynamics({ ...input, aviation: true }, dp, opts, s.route)
+        const dyn = await simulateDynamics({ ...input, aviation: true }, dp, opts, s.route)
         all.push({ ...dyn, label: 'По маршруту' })
       } else {
         for (const h of heights) {
@@ -760,15 +789,17 @@ export const useRadioStore = create<RadioState>((set, get) => ({
             })
             continue
           }
-          const dyn = simulateDynamics({ ...input, aviation: true }, dp, opts)
+          const dyn = await simulateDynamics({ ...input, aviation: true }, dp, opts)
           all.push({ ...dyn, altitudeM: h })
         }
       }
-      set({ dynamics: all[0] ?? null, dynamicsAll: all, fpsMeasured: null, animationAllowed: null })
-    })
+      set({ dynamics: all[0] ?? null, dynamicsAll: all, fpsMeasured: null, animationAllowed: null, dynamicsProgress: null })
+    } catch (e) {
+      set({ dynamicsProgress: null, lastError: e instanceof Error ? e.message : String(e) })
+    }
   },
 
-  resetResults: () => set({ result: null, budget: null, availability: null, reverseResult: null, reverseBudget: null, reverseInput: null, reverseAvailability: null, reverseRangeResults: null, rangeResults: null, searchReport: null, searchProgress: null, dynamics: null, dynamicsAll: [], lastError: null }),
+  resetResults: () => set({ result: null, budget: null, availability: null, reverseResult: null, reverseBudget: null, reverseInput: null, reverseAvailability: null, reverseRangeResults: null, rangeResults: null, searchReport: null, searchProgress: null, dynamics: null, dynamicsAll: [], dynamicsProgress: null, lastError: null }),
 }))
 
 /** СК-42 для точки (для отображения в UI). */

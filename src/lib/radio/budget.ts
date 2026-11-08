@@ -24,11 +24,14 @@ export const NOMINAL_POINTING_ERROR_DEG = 10
  * A(θ) = 12·(θ/θ3дБ)² дБ, ограничены уровнем боковых лепестков (за пределами
  * главного лепестка усиление не падает ниже УБЛ). При ширине луча ≥ 180°
  * (всенаправленная антенна) потери не учитываются.
+ * errorDeg — фактическая ошибка наведения (в статике — номинальные 10°;
+ * в динамике передаётся по сэмплам: |текущий угол места − номинальный|).
  */
-export function pointingLossDb(beamwidthDeg?: number, sidelobeDb?: number): number {
+export function pointingLossDb(beamwidthDeg?: number, sidelobeDb?: number, errorDeg: number = NOMINAL_POINTING_ERROR_DEG): number {
   const bw = beamwidthDeg ?? 30
   if (!(bw > 0) || bw >= 180) return 0
-  const loss = 12 * (NOMINAL_POINTING_ERROR_DEG / bw) ** 2
+  const err = Math.abs(errorDeg)
+  const loss = 12 * (err / bw) ** 2
   return Math.min(loss, -(sidelobeDb ?? -25))
 }
 
