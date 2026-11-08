@@ -6,13 +6,14 @@
  * тайлов рельефа, траектория объекта, переключение типа карты
  * (схема / спутник / гибрид), анимация при ≥ 24 FPS с измерением FPS.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as LType from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useRadioStore } from '@/store/radio-store'
 import { zoneRadiusM, trajectoryPoints } from '@/lib/radio/doppler'
 import { routeStateAt, routeDurationS } from '@/lib/radio/route'
 import { tileBounds } from '@/lib/radio/terrain'
+import { auditClearance } from '@/lib/radio/clearance'
 import { FPS_THRESHOLD } from '@/lib/radio/constants'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -72,7 +73,11 @@ export function MapPanel() {
   const hgtTiles = useRadioStore((s) => s.hgtTiles)
   const animationAllowed = useRadioStore((s) => s.animationAllowed)
   const fpsMeasured = useRadioStore((s) => s.fpsMeasured)
+  const lastInput = useRadioStore((s) => s.lastInput)
   const setField = useRadioStore((s) => s.setField)
+
+  // Класс трассы (clearance-аудит): бейдж light/heavy в тулбаре карты
+  const routeClass = useMemo(() => (lastInput ? auditClearance(lastInput).routeClass : null), [lastInput])
 
   // Инициализация карты
   useEffect(() => {
@@ -331,6 +336,14 @@ export function MapPanel() {
           {styleBtn('satellite', 'Спутник')}
           {styleBtn('hybrid', 'Гибрид')}
         </div>
+        {routeClass && (
+          <Badge
+            variant="outline"
+            className={`ml-1 ${routeClass === 'light' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}
+          >
+            {routeClass === 'light' ? 'лёгкая трасса' : 'тяжёлая трасса'}
+          </Badge>
+        )}
         {hgtTiles.length > 0 && (
           <Button
             size="sm"

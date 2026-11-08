@@ -32,6 +32,7 @@ import { fresnelRadiusM } from '@/lib/radio/fresnel'
 import { buildExportPayload, toJson, toCsv, download } from '@/lib/radio/export'
 import { linkStatus, type LinkStatus } from '@/lib/radio/budget'
 import { availabilitySummary } from '@/lib/radio/availability'
+import { auditClearance, type ClearanceVerdict } from '@/lib/radio/clearance'
 import { CoveragePanel } from '@/components/radio/CoveragePanel'
 import { AlertTriangle, Download, FileJson, FileSpreadsheet } from 'lucide-react'
 
@@ -46,6 +47,13 @@ const STATUS_META: Record<LinkStatus, { label: string; text: string; dot: string
 const marginCls = (marginDb: number): string => {
   const st = linkStatus(marginDb)
   return st === 'stable' ? 'text-emerald-600' : st === 'marginal' ? 'text-amber-600' : 'text-destructive'
+}
+
+/** Оформление вердикта clearance-аудита. */
+const CLEARANCE_META: Record<ClearanceVerdict, { label: string; cls: string }> = {
+  clear: { label: '0.6·F1 выполнен', cls: 'text-emerald-600 dark:text-emerald-400' },
+  marginal: { label: 'частичный просвет', cls: 'text-amber-600 dark:text-amber-400' },
+  blocked: { label: 'перекрыта', cls: 'text-red-600 dark:text-red-400' },
 }
 
 /** Статусная плашка «Связь …» с цветной точкой. */
@@ -121,6 +129,9 @@ export function ResultsPanel() {
       { name: 'Растительность', value: +(b.vegetationDb ?? 0).toFixed(1) },
     ].filter((r) => r.value > 0.001)
   }, [result])
+
+  // Clearance-аудит трассы: 0.6·F1 при K = 4/3, 2/3, ∞ (чистая функция от input)
+  const clearanceAudit = useMemo(() => (lastInput ? auditClearance(lastInput) : null), [lastInput])
 
   if (!result || !budget) {
     return (
@@ -624,6 +635,42 @@ export function ResultsPanel() {
           <p className="text-xs text-muted-foreground mt-1">
             Высоты показаны с учётом кривизны Земли (k = {s.kFactor.toFixed(2)}). Препятствия — здания/растительность из данных clutter.
           </p>
+          {clearanceAudit && (
+            <div className="mt-3 rounded-lg border p-3 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium">Аудит просвета (0.6·F1):</span>
+                <Badge
+                  variant="outline"
+                  className={clearanceAudit.routeClass === 'light' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}
+                >
+                  {clearanceAudit.routeClass === 'light' ? 'лёгкая трасса (light)' : 'тяжёлая трасса (heavy)'}
+                </Badge>
+                {clearanceAudit.extraDiffractionDb > 0.1 && (
+                  <span className="text-xs text-amber-600 dark:text-amber-400">
+                    доп. потери при подрефракции K = 2/3: +{clearanceAudit.extraDiffractionDb.toFixed(1)} дБ
+                  </span>
+                )}
+              </div>
+              <div className="grid gap-1.5 sm:grid-cols-3 text-xs">
+                {clearanceAudit.ks.map((k) => (
+                  <div key={k.label} className="rounded border p-2">
+                    <p className="font-mono font-medium">{k.label}</p>
+                    <p className={CLEARANCE_META[k.verdict].cls}>
+                      {CLEARANCE_META[k.verdict].label}
+                      {Number.isFinite(k.minRatio) && (
+                        <span className="text-muted-foreground"> · min {k.minRatio.toFixed(2)}·F1 ({k.minClearanceM.toFixed(0)} м)</span>
+                      )}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Просвет считается по профилю (рельеф + clutter) с выпуклостью Земли: K = 4/3 — стандартная рефракция,
+                K = 2/3 — подрефракция (худший случай), K = ∞ — плоская Земля. «Лёгкая трасса» — 0.6·F1 выполняется
+                и при 4/3, и при 2/3.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 

@@ -39,3 +39,17 @@ test('availability-отчёт P.530: карточка, прогноз недос
   // Строка прогноза недоступности в расходе бюджета
   await expect(page.getByText('Прогноз недоступности (P.530)').first()).toBeVisible()
 })
+
+test('clearance-аудит: блок просвета 0.6·F1 и класс трассы', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Рассчитать', exact: true }).click()
+  await expect(page.getByText('173.0 дБ').first()).toBeVisible({ timeout: 20000 })
+
+  // Блок аудита в карточке профиля: вердикты по K = 4/3, 2/3, ∞
+  await expect(page.getByText('Аудит просвета (0.6·F1):').first()).toBeVisible({ timeout: 10000 })
+  await expect(page.getByText('K = 4/3').first()).toBeVisible()
+  await expect(page.getByText('K = 2/3').first()).toBeVisible()
+  await expect(page.getByText('K = ∞').first()).toBeVisible()
+  // Класс трассы (в аудите профиля и бейдж на карте)
+  await expect(page.getByText(/(лёгкая|тяжёлая) трасса/).first()).toBeVisible()
+})

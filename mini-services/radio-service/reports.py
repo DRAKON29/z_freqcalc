@@ -11,7 +11,7 @@ python-стороне:
 """
 import math
 
-from p2001_lite import CLIMATE_FACTOR, rain_specific_attenuation
+from p2001_lite import CLIMATE_FACTOR, rain_specific_attenuation, earth_bulge_m, diffraction_loss_db
 
 HOURS_PER_YEAR = 8760
 
@@ -157,3 +157,61 @@ def availability_report(inp: dict, margin_db: float) -> dict:
         "outage": outage,
         "targets": targets,
     }
+
+
+# ---------------------------------------------------------------------------
+# Clearance-аудит трассы (зеркало src/lib/radio/clearance.ts): 0.6·F1 при
+# K = 4/3, 2/3, ∞; вердикт light/heavy; доп. дифракционные потери подрефракции.
+# ---------------------------------------------------------------------------
+
+CLEARANCE_CRITERION = 0.6
+CLEARANCE_K_FACTORS = ((4.0 / 3.0, "K = 4/3"), (2.0 / 3.0, "K = 2/3"), (math.inf, "K = ∞"))
+
+
+def fresnel_radius_m(d1: float, d_total: float, f_mhz: float) -> float:
+    """Радиус первой зоны Френеля, м (P.526 §2.3)."""
+    lam = 299.792458 / f_mhz
+    if d1 <= 0 or d1 >= d_total or d_total <= 0:
+        return 0.0
+    return math.sqrt(lam * d1 * (d_total - d1) / d_total)
+
+
+def audit_clearance(inp: dict) -> dict:
+    """Аудит просвета по профилю: худшая точка (просвет/F1) для каждого K."""
+    path = inp.get("path", {})
+    profile = path.get("profile", [])
+    if not profile:
+        return {"ks": [], "routeClass": "light", "extraDiffractionDb": 0.0}
+    d_total = float(path.get("distanceM", profile[-1]["d"]))
+    f_mhz = float(inp.get("frequencyMhz", 0))
+    tx_h = profile[0]["elev"] + float(inp.get("txHeightM", 0))
+    rx_h = profile[-1]["elev"] + float(inp.get("rxHeightM", 0))
+
+    ks = []
+    for k, label in CLEARANCE_K_FACTORS:
+        min_ratio, min_clear, worst_d = math.inf, math.inf, 0.0
+        for p in profile:
+            d1 = float(p["d"])
+            if d1 <= 0 or d1 >= d_total:
+                continue  # концы профиля — точки антенн
+            los = tx_h + (rx_h - tx_h) * d1 / d_total
+            clearance = los - earth_bulge_m(d1, d_total, k) - float(p["elev"]) - float(p.get("clutter", 0))
+            f1 = fresnel_radius_m(d1, d_total, f_mhz)
+            ratio = clearance / f1 if f1 > 0 else math.inf
+            if ratio < min_ratio:
+                min_ratio, min_clear, worst_d = ratio, clearance, d1
+        if not math.isfinite(min_ratio):
+            ks.append({"k": k, "label": label, "minRatio": math.inf, "minClearanceM": math.inf,
+                       "worstDm": 0.0, "verdict": "clear"})
+            continue
+        verdict = "clear" if min_ratio >= CLEARANCE_CRITERION else ("marginal" if min_ratio > 0 else "blocked")
+        ks.append({"k": k, "label": label, "minRatio": min_ratio, "minClearanceM": min_clear,
+                   "worstDm": worst_d, "verdict": verdict})
+
+    route_class = "light" if ks[0]["verdict"] == "clear" and ks[1]["verdict"] == "clear" else "heavy"
+
+    def diff_at(k: float) -> float:
+        return diffraction_loss_db([{"d": p["d"], "elev": p["elev"]} for p in profile], tx_h, rx_h, f_mhz, k)
+
+    extra = max(0.0, diff_at(2.0 / 3.0) - diff_at(4.0 / 3.0))
+    return {"ks": ks, "routeClass": route_class, "extraDiffractionDb": extra}

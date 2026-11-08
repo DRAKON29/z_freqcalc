@@ -5,7 +5,9 @@ import pytest
 
 from reports import (
     HOURS_PER_YEAR,
+    audit_clearance,
     availability_report,
+    fresnel_radius_m,
     multipath_occurrence_factor,
     multipath_outage_percent,
     rain_attenuation_001_db,
@@ -14,7 +16,7 @@ from reports import (
     required_margin_for_availability,
     solve_rain_outage_percent,
 )
-from p2001_lite import rain_specific_attenuation
+from p2001_lite import earth_bulge_m, rain_specific_attenuation
 
 
 def test_multipath_occurrence_factor():
@@ -118,3 +120,62 @@ def test_availability_report_no_margin():
     assert r["outage"]["totalPercent"] == 100
     assert r["outage"]["totalHoursPerYear"] == HOURS_PER_YEAR
     assert r["outage"]["availabilityPercent"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Clearance-аудит (те же эталонные случаи, что в tests/clearance.test.ts:
+# 30 км, 2400 МГц, F1(середина) = 30.6 м, выпуклость: 13.2/26.5/0 м)
+# ---------------------------------------------------------------------------
+
+D_M = 30000
+
+
+def _clearance_input(mid_elev: float) -> dict:
+    return {
+        "frequencyMhz": 2400,
+        "polarization": "vertical",
+        "txHeightM": 30,
+        "rxHeightM": 30,
+        "path": {
+            "distanceM": D_M,
+            "profile": [
+                {"d": 0, "elev": 100, "clutter": 0},
+                {"d": 7500, "elev": 100, "clutter": 0},
+                {"d": 15000, "elev": mid_elev, "clutter": 0},
+                {"d": 22500, "elev": 100, "clutter": 0},
+                {"d": 30000, "elev": 100, "clutter": 0},
+            ],
+        },
+    }
+
+
+def test_clearance_geometry_constants():
+    assert fresnel_radius_m(15000, D_M, 2400) == pytest.approx(30.6, abs=0.1)
+    assert earth_bulge_m(15000, D_M, 4 / 3) == pytest.approx(13.24, abs=0.1)
+    assert earth_bulge_m(15000, D_M, 2 / 3) == pytest.approx(26.49, abs=0.1)
+    assert earth_bulge_m(15000, D_M, math.inf) == 0
+
+
+def test_clearance_marginal_case_heavy():
+    # препятствие 95 м: clear при K=4/3 (0.71·F1), marginal при K=2/3 (0.28·F1) → heavy
+    a = audit_clearance(_clearance_input(95))
+    assert a["ks"][0]["verdict"] == "clear"
+    assert a["ks"][0]["minRatio"] == pytest.approx(21.76 / 30.6, abs=0.05)
+    assert a["ks"][0]["worstDm"] == 15000
+    assert a["ks"][1]["verdict"] == "marginal"
+    assert a["ks"][2]["verdict"] == "clear"
+    assert a["routeClass"] == "heavy"
+    assert a["extraDiffractionDb"] == pytest.approx(0, abs=1e-6)
+
+
+def test_clearance_blocked_case():
+    # препятствие 135 м выше LOS (130 м): blocked на всех K, потери при 2/3 больше
+    a = audit_clearance(_clearance_input(135))
+    assert all(k["verdict"] == "blocked" for k in a["ks"])
+    assert a["routeClass"] == "heavy"
+    assert a["extraDiffractionDb"] > 0
+
+
+def test_clearance_monotonic_in_k():
+    a = audit_clearance(_clearance_input(95))
+    assert a["ks"][2]["minRatio"] >= a["ks"][0]["minRatio"] >= a["ks"][1]["minRatio"]
