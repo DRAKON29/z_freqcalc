@@ -113,8 +113,17 @@ export interface ItuEnvironmentData {
   usedProducts: string[]
 }
 
+/**
+ * Шумовое окружение приёмника (ITU-R P.372-17 §6.1.1, Table 1):
+ * техногенный шум Fa по классификации окружений; 'none' — не учитывать
+ * (шум = kTB + NF, прежнее поведение).
+ */
+export type NoiseEnvironment = 'none' | 'quiet-rural' | 'rural' | 'residential' | 'business'
+
 export interface EquipmentParams {
   mode: 'simple' | 'detailed'
+  /** Шумовое окружение (P.372): общее для обеих станций — одна радиосистема */
+  noiseEnvironment?: NoiseEnvironment
   tx: AntennaParams
   rx: AntennaParams
   transmitter: TransceiverParams
@@ -258,6 +267,8 @@ export interface LinkBudget {
   linkMarginDb: number
   income: BudgetRow[]
   expense: BudgetRow[]
+  /** Шумовое окружение антенны Fa (P.372), дБ (0 или undefined — не учитывается) */
+  faDb?: number
   dopplerShiftHz?: number
   dopplerLossDb?: number
 }

@@ -53,3 +53,15 @@ test('clearance-аудит: блок просвета 0.6·F1 и класс тр
   // Класс трассы (в аудите профиля и бейдж на карте)
   await expect(page.getByText(/(лёгкая|тяжёлая) трасса/).first()).toBeVisible()
 })
+
+test('шумовое окружение P.372: селектор в приёмнике и подсказка Fa', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByText('Шумовое окружение (P.372)').first()).toBeVisible()
+  // По умолчанию — не учитывать (контрольные значения прежние)
+  await expect(page.getByText('Не учитывать (kTB + NF)').first()).toBeVisible()
+
+  // Выбрать «Город / бизнес»: на 2400 МГц фит ниже теплового фона → Fa = 0
+  await page.getByText('Не учитывать (kTB + NF)').first().click()
+  await page.getByRole('option', { name: 'Город / бизнес' }).click()
+  await expect(page.getByText(/фит P\.372 ниже теплового фона|Fa ≈/).first()).toBeVisible({ timeout: 10000 })
+})

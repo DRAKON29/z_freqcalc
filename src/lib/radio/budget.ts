@@ -2,11 +2,12 @@
  * Бюджет линии — формулы
  *   EIRP = P_tx − L_feeder_tx − L_point_tx + G_tx
  *   P_rx = EIRP − L_path + G_rx − L_feeder_rx − L_point_rx
- *   N = kTB + NF
+ *   N = kTB + NF (с шумом антенны по P.372: N = kTB + 10lg(f_rx + f_a − 1))
  *   SNR = P_rx − N
  *   Link margin = SNR − Eb/N0_req
  */
 import { KTB_DBM_HZ, MODULATIONS } from './constants'
+import { manMadeNoiseFaDb, systemNoisePowerDbm } from './noise'
 import type { BudgetRow, CalculationInput, EquipmentParams, LinkBudget, PropagationResult } from './types'
 
 export interface BudgetExtraLosses {
@@ -91,11 +92,15 @@ export function computeLinkBudget(
   // P_rx = EIRP − L_path + G_rx − L_feeder_rx − L_point_rx
   const prxDbm = eirpDbm - prop.medianLossDb - extraLoss + equipment.rx.gainDbi - rxFeeder - rxMismatch - rxPointing
 
-  // N = kTB + NF
+  // N = kTB + NF, с учётом шума антенны Fa (P.372, если задано окружение):
+  // f_сумм = f_rx + f_a − 1; при Fa = 0 (окружение не задано) → kTB + NF
   const nfDb = detailed ? equipment.receiver.noiseFigureDb ?? 3 : 3
   const bHz = detailed ? equipment.receiver.noiseBandwidthHz ?? 1e6 : 1e6
   const ktbDbm = KTB_DBM_HZ + 10 * Math.log10(bHz)
-  const noisePowerDbm = ktbDbm + nfDb
+  const faDb = equipment.noiseEnvironment && equipment.noiseEnvironment !== 'none'
+    ? manMadeNoiseFaDb(equipment.noiseEnvironment, input.frequencyMhz)
+    : 0
+  const noisePowerDbm = systemNoisePowerDbm(ktbDbm, nfDb, faDb)
 
   // SNR = P_rx − N
   const snrDb = prxDbm - noisePowerDbm
@@ -128,6 +133,7 @@ export function computeLinkBudget(
   const expense: BudgetRow[] = [
     { label: 'Мощность сигнала (P_rx)', value: prxDbm, unit: 'дБм', sign: '=' },
     { label: 'kTB (B = ' + fmtHz(bHz) + ')', value: ktbDbm, unit: 'дБм', sign: '+' },
+    ...(faDb ? [{ label: 'Шум антенны Fa (P.372)', value: faDb, unit: 'дБ' as const, sign: '+' as const }] : []),
     { label: 'Коэффициент шума (NF)', value: nfDb, unit: 'дБ', sign: '+' },
     { label: 'Мощность шума (N)', value: noisePowerDbm, unit: 'дБм', sign: '=' },
     { label: 'SNR', value: snrDb, unit: 'дБ', sign: '=' },
@@ -148,6 +154,7 @@ export function computeLinkBudget(
     linkMarginDb,
     income,
     expense,
+    ...(faDb ? { faDb } : {}),
   }
 }
 

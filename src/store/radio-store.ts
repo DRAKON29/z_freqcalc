@@ -34,6 +34,9 @@ import { LIMITS } from '@/lib/radio/constants'
 
 export const DEFAULT_EQUIPMENT: EquipmentParams = {
   mode: 'simple',
+  // Шумовое окружение по P.372 по умолчанию не учитывается (числа как раньше);
+  // селектор в блоке приёмника включает Fa (существенна в нижней части диапазона)
+  noiseEnvironment: 'none',
   tx: { gainDbi: 10, polarization: 'vertical' },
   rx: { gainDbi: 3, polarization: 'vertical' },
   transmitter: { powerDbm: 30, sensitivityDbm: -100 },

@@ -24,6 +24,7 @@ from p2001_lite import (
     doppler_tolerance_hz,
     doppler_loss_db,
     p2001_lite_calculate,
+    man_made_noise_fa_db,
 )
 
 
@@ -151,6 +152,63 @@ class TestBudget:
         b = compute_budget(self.inp, self.equipment, prop)
         assert b["eirpDbm"] == pytest.approx(40 - 12 * (10 / 30) ** 2, abs=1e-6)
         assert b["prxDbm"] == pytest.approx(b["eirpDbm"] - prop["medianLossDb"] + 3, abs=1e-6)
+
+    def test_noise_environment_default_unchanged(self):
+        """Без окружения (none/по умолчанию) бюджет идентичен прежнему: N = kTB + NF."""
+        prop = calculate(self.inp)
+        base = compute_budget(self.inp, self.equipment, prop)
+        self.equipment["noiseEnvironment"] = "none"
+        b = compute_budget(self.inp, self.equipment, prop)
+        assert b["noisePowerDbm"] == pytest.approx(base["noisePowerDbm"], abs=1e-9)
+        assert b["faDb"] is None
+        # rural на 2400 МГц — фит ниже теплового пола → 0 дБ, бюджет тот же
+        self.equipment["noiseEnvironment"] = "rural"
+        b = compute_budget(self.inp, self.equipment, prop)
+        assert b["noisePowerDbm"] == pytest.approx(base["noisePowerDbm"], abs=1e-9)
+
+
+class TestNoiseP372:
+    """Фиты техногенного шума P.372-17 (Table 1) и комбинация шум-факторов."""
+
+    def test_fits_reference_values(self):
+        # Fam = c − d·lg f (f в МГц)
+        assert man_made_noise_fa_db("business", 100) == pytest.approx(21.4, abs=1e-6)
+        assert man_made_noise_fa_db("residential", 250) == pytest.approx(72.5 - 27.7 * math.log10(250), abs=1e-6)
+        assert man_made_noise_fa_db("rural", 50) == pytest.approx(67.2 - 27.7 * math.log10(50), abs=1e-6)
+        assert man_made_noise_fa_db("quiet-rural", 30) == pytest.approx(53.6 - 28.6 * math.log10(30), abs=1e-6)
+
+    def test_order_of_environments(self):
+        for f in (50, 100, 250):
+            values = [man_made_noise_fa_db(e, f) for e in ("quiet-rural", "rural", "residential", "business")]
+            assert values == sorted(values)
+
+    def test_clamp_below_thermal_floor(self):
+        # экстраполяция за 250 МГц зажата на 0 дБ
+        assert man_made_noise_fa_db("rural", 2400) == 0
+        assert man_made_noise_fa_db("business", 2400) == 0
+        assert man_made_noise_fa_db("business", 500) > 0
+        assert man_made_noise_fa_db("none", 500) == 0
+
+    def test_budget_combination(self):
+        """Fa > NF → N = kTB + 10lg(f_rx + f_a − 1); строка faDb в бюджете."""
+        inp = {"frequencyMhz": 500, "polarization": "vertical", "path": {"distanceM": 5560}}
+        equipment = {
+            "mode": "simple",
+            "noiseEnvironment": "business",
+            "tx": {"gainDbi": 10, "polarization": "vertical", "beamwidthDeg": 360},
+            "rx": {"gainDbi": 3, "polarization": "vertical", "beamwidthDeg": 360},
+            "transmitter": {"powerDbm": 30, "sensitivityDbm": -100},
+            "receiver": {"powerDbm": 0, "sensitivityDbm": -100, "noiseBandwidthHz": 1e6,
+                         "noiseFigureDb": 5, "modulation": "QPSK", "requiredEbN0Db": 9.6},
+        }
+        prop = {"medianLossDb": 113.3, "breakdown": {}}
+        b = compute_budget(inp, equipment, prop)
+        fa = man_made_noise_fa_db("business", 500)
+        assert b["faDb"] == pytest.approx(fa, abs=1e-9)
+        ktb = 10 * math.log10(1.380649e-23 * 290 * 1e3) + 60
+        # simple-режим: NF форсируется в 3 дБ
+        expected = ktb + 10 * math.log10(10 ** (3 / 10) + 10 ** (fa / 10) - 1)
+        assert b["noisePowerDbm"] == pytest.approx(expected, abs=1e-9)
 
 
 class TestDoppler:

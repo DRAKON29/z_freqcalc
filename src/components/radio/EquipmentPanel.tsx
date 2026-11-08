@@ -15,7 +15,8 @@ import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { MODULATIONS } from '@/lib/radio/constants'
-import type { AntennaParams, ModulationId } from '@/lib/radio/types'
+import { manMadeNoiseFaDb, NOISE_ENVIRONMENT_LABELS } from '@/lib/radio/noise'
+import type { AntennaParams, ModulationId, NoiseEnvironment } from '@/lib/radio/types'
 import { SlidersHorizontal, RadioTower, Plane } from 'lucide-react'
 
 type PowerUnit = 'dbm' | 'mw'
@@ -68,8 +69,13 @@ function StationCard({
   const setEquipment = useRadioStore((s) => s.setEquipment)
   const setField = useRadioStore((s) => s.setField)
   const heightM = useRadioStore((s) => (station === 'ground' ? s.txHeightM : s.rxHeightM))
+  // Частота линии, на которую смотрит приёмник этой станции (для подсказки Fa):
+  // наземный приёмник — обратная линия (частота подвижного), подвижный — прямая
+  const rxLinkFreqMhz = useRadioStore((s) => (station === 'ground' ? s.mobileFrequencyMhz : s.frequencyMhz))
 
   const isGround = station === 'ground'
+  const noiseEnv: NoiseEnvironment = eq.noiseEnvironment ?? 'none'
+  const faNow = manMadeNoiseFaDb(noiseEnv, rxLinkFreqMhz)
   const ant = isGround ? eq.tx : eq.rx
   const setAnt = (patch: Partial<AntennaParams>) =>
     setEquipment(isGround ? { tx: { ...eq.tx, ...patch } } : { rx: { ...eq.rx, ...patch } })
@@ -239,11 +245,34 @@ function StationCard({
             </>
           )}
         </div>
-        {detailed && (
-          <p className="text-[11px] text-muted-foreground">
-            Шумовая полоса, NF, модуляция — общие для обеих станций (одна радиосистема).
-          </p>
-        )}
+        <div>
+          <Label className="text-xs">Шумовое окружение (P.372)</Label>
+          <Select
+            value={noiseEnv}
+            onValueChange={(v) => setEquipment({ noiseEnvironment: v as NoiseEnvironment })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.entries(NOISE_ENVIRONMENT_LABELS) as [NoiseEnvironment, string][]).map(([id, label]) => (
+                <SelectItem key={id} value={id}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {noiseEnv !== 'none' && (
+            <p className="text-[11px] text-muted-foreground">
+              {faNow > 0
+                ? `Fa ≈ ${faNow.toFixed(1)} дБ на ${rxLinkFreqMhz.toFixed(0)} МГц — учтено в шуме линии`
+                : `на ${rxLinkFreqMhz.toFixed(0)} МГц фит P.372 ниже теплового фона — учтено 0 дБ`}
+            </p>
+          )}
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Окружение, полоса, NF, модуляция — общие для обеих станций (одна радиосистема).
+        </p>
       </div>
     </div>
   )

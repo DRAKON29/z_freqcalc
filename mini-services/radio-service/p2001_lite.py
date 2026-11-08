@@ -352,7 +352,9 @@ def compute_budget(inp: dict, equipment: dict, prop: dict, doppler_loss_db: floa
     nf = receiver.get("noiseFigureDb", 3) if detailed else 3
     b_hz = receiver.get("noiseBandwidthHz", 1e6) if detailed else 1e6
     ktb = KTB_DBM_HZ + 10 * math.log10(b_hz)
-    noise = ktb + nf
+    # Шум антенны Fa (P.372-17 §6.1.1): сложение шум-факторов f = f_rx + f_a − 1
+    fa = man_made_noise_fa_db(equipment.get("noiseEnvironment", "none"), inp.get("frequencyMhz", 0))
+    noise = ktb + 10 * math.log10(10 ** (nf / 10) + 10 ** (fa / 10) - 1) if fa > 0 else ktb + nf
     snr = prx - noise
 
     mod = receiver.get("modulation", "QPSK")
@@ -366,8 +368,28 @@ def compute_budget(inp: dict, equipment: dict, prop: dict, doppler_loss_db: floa
         "eirpDbm": eirp, "pathLossDb": prop["medianLossDb"], "prxDbm": prx,
         "noisePowerDbm": noise, "ktbDbm": ktb, "nfDb": nf, "snrDb": snr,
         "ebN0ActualDb": ebn0_actual, "ebN0RequiredDb": ebn0_req, "linkMarginDb": margin,
+        "faDb": fa if fa > 0 else None,
         "dopplerLossDb": doppler_loss_db if doppler_loss_db > 0 else None,
     }
+
+
+# Техногенный шум P.372-17 (§6.1.1, Table 1): Fam = c − d·lg f (f в МГц);
+# фит валиден 0.3–250 МГц, выше — экстраполяция с зажимом снизу на 0 дБ
+P372_MAN_MADE_FITS = {
+    "business": (76.8, 27.7),
+    "residential": (72.5, 27.7),
+    "rural": (67.2, 27.7),
+    "quiet-rural": (53.6, 28.6),
+}
+
+
+def man_made_noise_fa_db(environment: str, f_mhz: float) -> float:
+    """Медианный техногенный шум Fa, дБ выше kT0 (0 — не учитывать/ниже пола)."""
+    fit = P372_MAN_MADE_FITS.get(environment)
+    if not fit or not f_mhz > 0:
+        return 0.0
+    c, d = fit
+    return min(60.0, max(0.0, c - d * math.log10(f_mhz)))
 
 
 def doppler_tolerance_hz(b_hz: float, modulation: str) -> float:
