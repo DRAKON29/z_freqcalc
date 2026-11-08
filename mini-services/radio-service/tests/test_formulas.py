@@ -11,8 +11,11 @@ import pytest
 from p2001_lite import (
     fspl_db,
     knife_edge_loss_db,
+    knife_edge_v,
     bullington_loss_db,
     deygout_loss_db,
+    epstein_peterson_loss_db,
+    earth_bulge_m,
     extract_edges,
     diffraction_loss_db,
     rain_specific_attenuation,
@@ -68,6 +71,32 @@ class TestDiffraction:
             ),
             abs=1e-6,
         )
+
+    def test_epstein_peterson_two_edge_reference(self):
+        """Эталон 2-краевой трассы (ручной расчёт, зеркалит TS-тест):
+        30 км, 2400 МГц, K=4/3, антенны 20 м, рёбра 60 м на 10 и 20 км.
+        Дейгаут ≈ 35.8, ЭП ≈ 33.2, Буллингтон ≈ 21.0 (занижает)."""
+        d, f, k = 30_000, 2400, 4 / 3
+        edges = [{"d": 10_000, "h": 60}, {"d": 20_000, "h": 60}]
+        v_dom = knife_edge_v(10_000, 20_000, 60 + earth_bulge_m(10_000, d, k) - 20, f)
+        v_right = knife_edge_v(10_000, 10_000, 20, f)
+        v_ep = knife_edge_v(10_000, 10_000, 60 + earth_bulge_m(10_000, 20_000, k) - 40, f)
+        assert epstein_peterson_loss_db(edges, 20, 20, d, f, k) == pytest.approx(2 * knife_edge_loss_db(v_ep), abs=1e-6)
+        assert epstein_peterson_loss_db(edges, 20, 20, d, f, k) == pytest.approx(33.21, abs=0.1)
+        assert bullington_loss_db(edges, 20, 20, d, f, k) == pytest.approx(knife_edge_loss_db(v_dom), abs=1e-6)
+        assert deygout_loss_db(edges, 20, 20, d, f, k) == pytest.approx(
+            knife_edge_loss_db(v_dom) + knife_edge_loss_db(v_right), abs=1e-6
+        )
+        # Буллингтон занижает относительно остальных методов
+        assert bullington_loss_db(edges, 20, 20, d, f, k) < epstein_peterson_loss_db(edges, 20, 20, d, f, k)
+
+    def test_epstein_peterson_single_edge_equals_knife_edge(self):
+        """Одиночное ребро: ЭП совпадает с ножевым ребром и Дейгаутом."""
+        edges = [{"d": 15_000, "h": 80}]
+        ep = epstein_peterson_loss_db(edges, 20, 20, 30_000, 2400, 4 / 3)
+        v = knife_edge_v(15_000, 15_000, 80 + earth_bulge_m(15_000, 30_000, 4 / 3) - 20, 2400)
+        assert ep == pytest.approx(knife_edge_loss_db(v), abs=1e-9)
+        assert deygout_loss_db(edges, 20, 20, 30_000, 2400, 4 / 3) == pytest.approx(ep, abs=1e-9)
 
 
 class TestRainP838:

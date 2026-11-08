@@ -1,6 +1,7 @@
 /**
  * Дифракция на препятствиях — ITU-R P.526:
  *  • одиночное ножевое ребро (§4.2, параметр v);
+ *  • метод Эпштейна–Петерсона, последовательные рёбра (§4.5.1);
  *  • метод Буллингтона (§4.5.2);
  *  • метод Дейгаута с выбором доминирующего ребра (§4.4);
  * По берётся наибольшая из оценок Дейгаута и Буллингтона.
@@ -112,6 +113,79 @@ export function deygoutLossDb(
     loss += deygoutLossDb(rebased, hMain, rxH, dTotal - worst.d, freqMhz, kFactor)
   }
   return loss
+}
+
+/**
+ * Метод Эпштейна–Петерсона (P.526 §4.5.1): последовательная дифракция —
+ * каждое ребро рассматривается как препятствие подпути между соседними
+ * рёбрами (или Tx/Rx), потери всех рёбер суммируются. На одиночном ребре
+ * совпадает с ножевым ребром; на многопрепятственных трассах обычно между
+ * Буллингтоном (занижает) и Дейгаутом (может завышать).
+ */
+export function epsteinPetersonLossDb(
+  edges: Edge[],
+  txH: number,
+  rxH: number,
+  dTotal: number,
+  freqMhz: number,
+  kFactor: number,
+): number {
+  if (edges.length === 0) return 0
+  const pts = [{ d: 0, h: txH }, ...edges.filter((e) => e.d > 0 && e.d < dTotal), { d: dTotal, h: rxH }]
+  let loss = 0
+  for (let i = 1; i < pts.length - 1; i++) {
+    const a = pts[i - 1]
+    const edge = pts[i]
+    const b = pts[i + 1]
+    const sub = b.d - a.d
+    const d1 = edge.d - a.d
+    const d2 = b.d - edge.d
+    if (d1 <= 0 || d2 <= 0) continue
+    const hEff = edge.h + earthBulgeM(d1, sub, kFactor)
+    const los = a.h + ((b.h - a.h) * d1) / sub
+    loss += knifeEdgeLossDb(knifeEdgeV(d1, d2, hEff - los, freqMhz))
+  }
+  return loss
+}
+
+/** Развёртка методов дифракции по одной трассе (сравнение — роадмап 1.3). */
+export interface DiffractionMethods {
+  bullingtonDb: number
+  deygoutDb: number
+  epsteinPetersonDb: number
+  /** Текущая модель: max(Дейгаут, Буллингтон) */
+  currentDb: number
+  /** Разброс трёх методов (max − min), дБ */
+  spreadDb: number
+  /** Число рёбер (локальных максимумов профиля + clutter) */
+  edgeCount: number
+}
+
+/** Сравнение всех методов дифракции на трассе; null — дифракции нет (нет рёбер). */
+export function diffractionMethodsDb(
+  profile: { d: number; elev: number }[],
+  txH: number,
+  rxH: number,
+  freqMhz: number,
+  kFactor: number,
+  clutterHeights: Edge[] = [],
+): DiffractionMethods | null {
+  if (profile.length < 3) return null
+  const dTotal = profile[profile.length - 1].d
+  const edges = [...extractEdges(profile), ...clutterHeights].sort((a, b) => a.d - b.d)
+  if (edges.length === 0) return null
+
+  const bull = bullingtonLossDb(edges, txH, rxH, dTotal, freqMhz, kFactor)
+  const dey = deygoutLossDb(edges, txH, rxH, dTotal, freqMhz, kFactor)
+  const ep = epsteinPetersonLossDb(edges, txH, rxH, dTotal, freqMhz, kFactor)
+  return {
+    bullingtonDb: bull,
+    deygoutDb: dey,
+    epsteinPetersonDb: ep,
+    currentDb: Math.max(dey, bull),
+    spreadDb: Math.max(bull, dey, ep) - Math.min(bull, dey, ep),
+    edgeCount: edges.length,
+  }
 }
 
 /** Выбор локальных максимумов профиля (вершины препятствий). */

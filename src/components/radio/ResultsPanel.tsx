@@ -33,6 +33,7 @@ import { buildExportPayload, toJson, toCsv, download } from '@/lib/radio/export'
 import { linkStatus, type LinkStatus } from '@/lib/radio/budget'
 import { availabilitySummary } from '@/lib/radio/availability'
 import { auditClearance, type ClearanceVerdict } from '@/lib/radio/clearance'
+import { diffractionMethodsDb } from '@/lib/radio/diffraction'
 import { CoveragePanel } from '@/components/radio/CoveragePanel'
 import { AlertTriangle, Download, FileJson, FileSpreadsheet } from 'lucide-react'
 
@@ -132,6 +133,19 @@ export function ResultsPanel() {
 
   // Clearance-аудит трассы: 0.6·F1 при K = 4/3, 2/3, ∞ (чистая функция от input)
   const clearanceAudit = useMemo(() => (lastInput ? auditClearance(lastInput) : null), [lastInput])
+
+  // Сравнение методов дифракции (роадмап 1.3): показывается при наличии затенения;
+  // k-фактор тот же, что в медиане модели (env?.k50 ?? kFactor)
+  const diffractionMethods = useMemo(() => {
+    if (!lastInput || !result) return null
+    if (!(result.breakdown.diffractionDb > 0.05)) return null
+    const profile = lastInput.path.profile
+    if (profile.length < 3) return null
+    const txH = (profile[0]?.elev ?? 0) + lastInput.txHeightM
+    const rxH = (profile[profile.length - 1]?.elev ?? 0) + lastInput.rxHeightM
+    const k = lastInput.environment?.k50 ?? lastInput.kFactor
+    return diffractionMethodsDb(profile, txH, rxH, lastInput.frequencyMhz, k)
+  }, [lastInput, result])
 
   if (!result || !budget) {
     return (
@@ -670,6 +684,45 @@ export function ResultsPanel() {
                 и при 4/3, и при 2/3.
               </p>
             </div>
+          )}
+          {diffractionMethods && (
+            <details className="mt-3 rounded-lg border p-3">
+              <summary className="cursor-pointer text-sm font-medium select-none">
+                Сравнение методов дифракции · {diffractionMethods.edgeCount} препятств.
+                {diffractionMethods.edgeCount === 1 ? 'ие' : 'ий'} · разброс {diffractionMethods.spreadDb.toFixed(1)} дБ
+              </summary>
+              <Table className="mt-2">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Метод (P.526)</TableHead>
+                    <TableHead className="text-right">Потери, дБ</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow>
+                    <TableCell>Буллингтон (§4.5.2) — эквивалентное ребро</TableCell>
+                    <TableCell className="text-right font-mono">{diffractionMethods.bullingtonDb.toFixed(1)}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Дейгаут (§4.4) — главные препятствия</TableCell>
+                    <TableCell className="text-right font-mono">{diffractionMethods.deygoutDb.toFixed(1)}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Эпштейн–Петерсон (§4.5.1) — последовательные рёбра</TableCell>
+                    <TableCell className="text-right font-mono">{diffractionMethods.epsteinPetersonDb.toFixed(1)}</TableCell>
+                  </TableRow>
+                  <TableRow className="bg-muted/50 font-medium">
+                    <TableCell>В расчёте: max(Дейгаут, Буллингтон)</TableCell>
+                    <TableCell className="text-right font-mono">{diffractionMethods.currentDb.toFixed(1)}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+              <p className="text-xs text-muted-foreground mt-2">
+                Методы сходятся — дифракционной оценке можно верить. Разброс 5–10 дБ и больше — на трассе несколько
+                сопоставимых препятствий, точность ограничена знанием рельефа: запас лучше брать по худшей оценке
+                (Буллингтон обычно занижает, Дейгаут может завышать, Эпштейн–Петерсон — между ними).
+              </p>
+            </details>
           )}
         </CardContent>
       </Card>

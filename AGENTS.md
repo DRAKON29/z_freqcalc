@@ -46,13 +46,13 @@ NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000/api bun run dev
 ## Верификация (регресс)
 
 ```bash
-bun test tests/          # 107 тестов TS-ядра — должны быть зелёными
+bun test tests/          # 114 тестов TS-ядра — должны быть зелёными
 bun run lint             # eslint — чисто
-cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q   # 49 тестов формул и API
+cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q   # 53 теста формул и API
 ```
 
 E2E (стек уже запущен: сервис :8000 + фронт :3000):
-`PLAYWRIGHT_CHANNEL=msedge bunx playwright test` (11 сценариев).
+`PLAYWRIGHT_CHANNEL=msedge bunx playwright test` (12 сценариев).
 
 Контрольные значения на дефолтных вводных (Москва A→Б, 2400 МГц, P.2001, http):
 медианные потери **173.0 дБ**, P_rx **−132.7 дБм**, margin **−31.3 дБ**
@@ -68,6 +68,11 @@ HEAD — см. git log (на момент актуализации `9ead9e4`), �
 (устарел относительно HEAD). Коммиты — conventional на русском, пушим в `dev_`.
 
 Реализовано (сверху вниз):
+- (этот коммит) **роадмап 1.3**: сравнение методов дифракции — Эпштейн–Петерсон
+  (P.526 §4.5.1) в `diffraction.ts` + `diffractionMethodsDb` (развертка
+  Буллингтон/Дейгаут/ЭП, текущая max(Д,Б), разброс); раскрывающаяся таблица
+  в карточке профиля (при дифракции > 0.05 дБ); python-зеркало
+  `epstein_peterson_loss_db` (p2001_lite.py) + `diffraction_methods_db` (reports.py)
 - `9ead9e4` — **роадмап 1.4**: шумовой порог P.372-17 (`src/lib/radio/noise.ts`):
   селектор «Шумовое окружение» в приёмнике (дефолт «не учитывать» — бюджет не
   меняется; фиты Table 1 валидны 0.3–250 МГц, выше зажим на 0 дБ), N = kTB +

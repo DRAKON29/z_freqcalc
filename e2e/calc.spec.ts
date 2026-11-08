@@ -65,3 +65,16 @@ test('шумовое окружение P.372: селектор в приёмн�
   await page.getByRole('option', { name: 'Город / бизнес' }).click()
   await expect(page.getByText(/фит P\.372 ниже теплового фона|Fa ≈/).first()).toBeVisible({ timeout: 10000 })
 })
+
+test('сравнение методов дифракции: раскрывающаяся таблица при затенении', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Рассчитать', exact: true }).click()
+  await expect(page.getByText('173.0 дБ').first()).toBeVisible({ timeout: 20000 })
+
+  // На синтетическом DEM трасса затенена — сводка методов видна в свёрнутом виде
+  const summary = page.getByText(/Сравнение методов дифракции/).first()
+  await expect(summary).toBeVisible({ timeout: 10000 })
+  await summary.click()
+  await expect(page.getByText('Эпштейн–Петерсон (§4.5.1) — последовательные рёбра').first()).toBeVisible()
+  await expect(page.getByText(/В расчёте: max\(Дейгаут, Буллингтон\)/).first()).toBeVisible()
+})

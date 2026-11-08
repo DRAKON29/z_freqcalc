@@ -115,6 +115,27 @@ def deygout_loss_db(edges, tx_h, rx_h, d_total, f_mhz, k):
     return loss
 
 
+def epstein_peterson_loss_db(edges, tx_h, rx_h, d_total, f_mhz, k):
+    """Метод Эпштейна–Петерсона (P.526 §4.5.1): последовательные рёбра,
+    каждое — препятствие подпутя между соседними рёбрами (или Tx/Rx);
+    потери суммируются. На одиночном ребре совпадает с ножевым ребром."""
+    if not edges:
+        return 0.0
+    pts = [{"d": 0, "h": tx_h}] + [e for e in edges if 0 < e["d"] < d_total] + [{"d": d_total, "h": rx_h}]
+    loss = 0.0
+    for i in range(1, len(pts) - 1):
+        a, edge, b = pts[i - 1], pts[i], pts[i + 1]
+        sub = b["d"] - a["d"]
+        d1 = edge["d"] - a["d"]
+        d2 = b["d"] - edge["d"]
+        if d1 <= 0 or d2 <= 0:
+            continue
+        h_eff = edge["h"] + earth_bulge_m(d1, sub, k)
+        los = a["h"] + (b["h"] - a["h"]) * d1 / sub
+        loss += knife_edge_loss_db(knife_edge_v(d1, d2, h_eff - los, f_mhz))
+    return loss
+
+
 def extract_edges(profile):
     """Локальные максимумы профиля."""
     edges = []

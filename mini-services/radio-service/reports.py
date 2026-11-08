@@ -11,7 +11,16 @@ python-стороне:
 """
 import math
 
-from p2001_lite import CLIMATE_FACTOR, rain_specific_attenuation, earth_bulge_m, diffraction_loss_db
+from p2001_lite import (
+    CLIMATE_FACTOR,
+    bullington_loss_db,
+    deygout_loss_db,
+    diffraction_loss_db,
+    earth_bulge_m,
+    epstein_peterson_loss_db,
+    extract_edges,
+    rain_specific_attenuation,
+)
 
 HOURS_PER_YEAR = 8760
 
@@ -215,3 +224,30 @@ def audit_clearance(inp: dict) -> dict:
 
     extra = max(0.0, diff_at(2.0 / 3.0) - diff_at(4.0 / 3.0))
     return {"ks": ks, "routeClass": route_class, "extraDiffractionDb": extra}
+
+
+# ---------------------------------------------------------------------------
+# Сравнение методов дифракции (зеркало diffractionMethodsDb, роадмап 1.3):
+# Буллингтон / Дейгаут / Эпштейн–Петерсон, текущая модель = max(Д, Б), разброс.
+# ---------------------------------------------------------------------------
+
+
+def diffraction_methods_db(profile, tx_h, rx_h, f_mhz, k, clutter_edges=None):
+    """Развёртка методов дифракции по трассе (None — дифракции нет)."""
+    if len(profile) < 3:
+        return None
+    d_total = profile[-1]["d"]
+    edges = sorted(extract_edges(profile) + (clutter_edges or []), key=lambda e: e["d"])
+    if not edges:
+        return None
+    bull = bullington_loss_db(edges, tx_h, rx_h, d_total, f_mhz, k)
+    dey = deygout_loss_db(edges, tx_h, rx_h, d_total, f_mhz, k)
+    ep = epstein_peterson_loss_db(edges, tx_h, rx_h, d_total, f_mhz, k)
+    return {
+        "bullingtonDb": bull,
+        "deygoutDb": dey,
+        "epsteinPetersonDb": ep,
+        "currentDb": max(dey, bull),
+        "spreadDb": max(bull, dey, ep) - min(bull, dey, ep),
+        "edgeCount": len(edges),
+    }

@@ -7,6 +7,7 @@ from reports import (
     HOURS_PER_YEAR,
     audit_clearance,
     availability_report,
+    diffraction_methods_db,
     fresnel_radius_m,
     multipath_occurrence_factor,
     multipath_outage_percent,
@@ -179,3 +180,30 @@ def test_clearance_blocked_case():
 def test_clearance_monotonic_in_k():
     a = audit_clearance(_clearance_input(95))
     assert a["ks"][2]["minRatio"] >= a["ks"][0]["minRatio"] >= a["ks"][1]["minRatio"]
+
+
+def test_diffraction_methods_reference():
+    """Сравнение методов дифракции на эталонной 2-краевой трассе (зеркало TS)."""
+    profile = [
+        {"d": 0, "elev": 0},
+        {"d": 5000, "elev": 0},
+        {"d": 10000, "elev": 60},
+        {"d": 15000, "elev": 0},
+        {"d": 20000, "elev": 60},
+        {"d": 25000, "elev": 0},
+        {"d": 30000, "elev": 0},
+    ]
+    m = diffraction_methods_db(profile, 20, 20, 2400, 4 / 3)
+    assert m is not None
+    assert m["edgeCount"] == 2
+    assert m["deygoutDb"] == pytest.approx(35.75, abs=0.1)
+    assert m["epsteinPetersonDb"] == pytest.approx(33.21, abs=0.1)
+    assert m["bullingtonDb"] == pytest.approx(21.0, abs=0.1)
+    assert m["currentDb"] == pytest.approx(max(m["deygoutDb"], m["bullingtonDb"]), abs=1e-9)
+    assert m["spreadDb"] == pytest.approx(m["deygoutDb"] - m["bullingtonDb"], abs=1e-9)
+    assert m["spreadDb"] > 5
+
+
+def test_diffraction_methods_no_edges():
+    # профиль короче 3 точек — сравнение неприменимо
+    assert diffraction_methods_db([{"d": 0, "elev": 0}, {"d": 30000, "elev": 0}], 20, 20, 2400, 4 / 3) is None
