@@ -69,3 +69,4 @@ mini-services/radio-service/data/itu_maps/*
 /test-results/
 /e2e-report/
 playwright-report/
+mini-services/radio-service/data/srtm/
