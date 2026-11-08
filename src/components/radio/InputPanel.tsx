@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { CLIMATE_ZONES, LIMITS } from '@/lib/radio/constants'
@@ -172,6 +173,37 @@ export function InputPanel() {
           <div>
             <p className="text-sm font-medium text-emerald-700">Точка A (наземный Tx)</p>
             <CoordEditor which="A" />
+            {/* Поиск оптимальной позиции точки A в заданном радиусе */}
+            <div className="mt-2 space-y-2 rounded-lg border p-2.5">
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={s.searchEnabled}
+                  onCheckedChange={(v) => s.setField('searchEnabled', v === true)}
+                  aria-label="Поиск позиции"
+                />
+                Поиск позиции
+              </label>
+              {s.searchEnabled && (
+                <>
+                  <div>
+                    <Label htmlFor="search-radius" className="text-xs">Радиус поиска, м (не более 5000)</Label>
+                    <Input
+                      id="search-radius"
+                      aria-label="Радиус поиска, м"
+                      type="number"
+                      min={50}
+                      max={5000}
+                      step={100}
+                      value={s.searchRadiusM}
+                      onChange={(e) => s.setField('searchRadiusM', Number(e.target.value))}
+                    />
+                  </div>
+                  {s.searchRadiusM > 5000 && (
+                    <p className="text-[11px] text-destructive">Радиус ограничен 5000 м — будет использован 5000.</p>
+                  )}
+                </>
+              )}
+            </div>
           </div>
           <Separator />
           <div>

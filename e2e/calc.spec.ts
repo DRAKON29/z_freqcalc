@@ -78,3 +78,24 @@ test('сравнение методов дифракции: раскрывающ
   await expect(page.getByText('Эпштейн–Петерсон (§4.5.1) — последовательные рёбра').first()).toBeVisible()
   await expect(page.getByText(/В расчёте: max\(Дейгаут, Буллингтон\)/).first()).toBeVisible()
 })
+
+test('поиск позиции A: чекбокс → радиус → блок с СК-42 по 7 цифр', async ({ page }) => {
+  await page.goto('/')
+
+  // Чекбокс скрытое поле радиуса: до включения поля нет
+  await expect(page.getByLabel('Радиус поиска, м')).toHaveCount(0)
+  await page.getByRole('checkbox', { name: 'Поиск позиции' }).click()
+  await expect(page.getByLabel('Радиус поиска, м')).toBeVisible()
+  await page.getByLabel('Радиус поиска, м').fill('1000')
+
+  await page.getByRole('button', { name: 'Рассчитать', exact: true }).click()
+
+  // Свёрнутый блок: «найдено N оптимальных точек»
+  const summary = page.getByText(/Поиск позиции A: найдено \d+ оптимальных точек/).first()
+  await expect(summary).toBeVisible({ timeout: 40000 })
+  await summary.click()
+  await expect(page.getByText('Исходная точка A').first()).toBeVisible()
+  // Координаты СК-42 — ровно 7 цифр на координату
+  await expect(page.getByText(/^\d{7}$/).first()).toBeVisible()
+  await expect(page.getByText(/Перебор по кольцам/).first()).toBeVisible()
+})

@@ -28,6 +28,7 @@ import { distanceM, bearingDeg, wgs84ToSk42, sk42ToWgs84 } from '@/lib/radio/coo
 import { getDeviceId, saveHistory, syncEntry, listItuMaps, getItuMap, deleteItuMap } from '@/lib/radio/history'
 import { calculationInputSchema, dynamicParamsSchema } from '@/lib/radio/validation'
 import { parseRouteFile, routeDurationS } from '@/lib/radio/route'
+import { searchOptimalPointA, type SearchReport } from '@/lib/radio/optimal-point'
 import { ituEnvironmentAt, ituProductKey, type ItuGridSet } from '@/lib/radio/itu-env'
 import type { ItuGrid } from '@/lib/radio/itu-grid'
 import { LIMITS } from '@/lib/radio/constants'
@@ -168,6 +169,16 @@ export interface RadioState {
   lastCalculatedAt: string | null
   terrainWarning: string | null
 
+  // Поиск оптимальной позиции точки A (чекбокс «Поиск позиции»)
+  /** Включён ли поиск позиции (перебор кандидатов в радиусе) */
+  searchEnabled: boolean
+  /** Радиус поиска, м (не более 5000) */
+  searchRadiusM: number
+  /** Результат последнего поиска (null — поиск не выполнялся) */
+  searchReport: SearchReport | null
+  /** Прогресс перебора кандидатных позиций */
+  searchProgress: { done: number; total: number } | null
+
   // Динамика
   dynamicsParams: DynamicParams
   altitudeMode: 'single' | 'multi'
@@ -254,6 +265,11 @@ export const useRadioStore = create<RadioState>((set, get) => ({
   lastError: null,
   lastCalculatedAt: null,
   terrainWarning: null,
+
+  searchEnabled: false,
+  searchRadiusM: 1000,
+  searchReport: null,
+  searchProgress: null,
 
   dynamicsParams: {
     altitudeM: 500,
@@ -622,6 +638,28 @@ export const useRadioStore = create<RadioState>((set, get) => ({
         }
       }
 
+      // Поиск оптимальной позиции точки A (чекбокс «Поиск позиции»): перебор
+      // кандидатных позиций в радиусе с параметрами выполненного расчёта
+      let searchReport: SearchReport | null = null
+      if (s.searchEnabled && s.searchRadiusM >= 50) {
+        try {
+          set({ searchProgress: { done: 0, total: 0 } })
+          const dem = sAfterSrtm.hgtTiles.length > 0 ? createHgtDem(sAfterSrtm.hgtTiles) : createSyntheticDem()
+          const clutterSampler = sAfterSrtm.clutter ? makeClutterSampler(sAfterSrtm.clutter) : undefined
+          searchReport = await searchOptimalPointA(
+            lastInput,
+            s.equipment,
+            dem,
+            clutterSampler,
+            s.searchRadiusM,
+            s.model === 'fspl-p526' ? 'fspl-p526' : 'p2001',
+            (done, total) => set({ searchProgress: { done, total } }),
+          )
+        } catch {
+          searchReport = null // поиск — не критичный путь
+        }
+      }
+
       set({
         result,
         budget,
@@ -633,6 +671,8 @@ export const useRadioStore = create<RadioState>((set, get) => ({
         reverseRangeResults,
         rangeResults,
         lastInput,
+        searchReport,
+        searchProgress: null,
         calculating: false,
         lastCalculatedAt: new Date().toISOString(),
       })
@@ -728,7 +768,7 @@ export const useRadioStore = create<RadioState>((set, get) => ({
     })
   },
 
-  resetResults: () => set({ result: null, budget: null, availability: null, reverseResult: null, reverseBudget: null, reverseInput: null, reverseAvailability: null, reverseRangeResults: null, rangeResults: null, dynamics: null, dynamicsAll: [], lastError: null }),
+  resetResults: () => set({ result: null, budget: null, availability: null, reverseResult: null, reverseBudget: null, reverseInput: null, reverseAvailability: null, reverseRangeResults: null, rangeResults: null, searchReport: null, searchProgress: null, dynamics: null, dynamicsAll: [], lastError: null }),
 }))
 
 /** СК-42 для точки (для отображения в UI). */

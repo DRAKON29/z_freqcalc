@@ -34,6 +34,7 @@ import { linkStatus, type LinkStatus } from '@/lib/radio/budget'
 import { availabilitySummary } from '@/lib/radio/availability'
 import { auditClearance, type ClearanceVerdict } from '@/lib/radio/clearance'
 import { diffractionMethodsDb } from '@/lib/radio/diffraction'
+import { fmtSk42SevenDigits } from '@/lib/radio/optimal-point'
 import { CoveragePanel } from '@/components/radio/CoveragePanel'
 import { AlertTriangle, Download, FileJson, FileSpreadsheet } from 'lucide-react'
 
@@ -91,7 +92,7 @@ function rainSourceLabel(src: 'itu' | 'user' | 'zone' | null): string {
 
 export function ResultsPanel() {
   const s = useRadioStore()
-  const { result, budget, availability, lastInput, rangeResults, reverseResult, reverseBudget, reverseInput, reverseAvailability, reverseRangeResults, mobileFrequencyMhz, mobileFrequencyMode, terrainWarning } = s
+  const { result, budget, availability, lastInput, rangeResults, reverseResult, reverseBudget, reverseInput, reverseAvailability, reverseRangeResults, mobileFrequencyMhz, mobileFrequencyMode, terrainWarning, searchReport, searchProgress } = s
 
   const profileData = useMemo(() => {
     if (!lastInput) return []
@@ -440,6 +441,77 @@ export function ResultsPanel() {
             </p>
           </CardContent>
         </Card>
+      )}
+
+      {/* Поиск оптимальной позиции точки A: сворачиваемый блок, свёрнут — «найдено N оптимальных точек» */}
+      {searchReport && (
+        <details className="rounded-lg border p-3" open={!!searchProgress}>
+          <summary className="cursor-pointer select-none text-sm font-medium">
+            Поиск позиции A:{' '}
+            {searchProgress
+              ? `поиск… ${searchProgress.done}/${searchProgress.total}`
+              : `найдено ${searchReport.optimalCount} оптимальных точек`}
+            <span className="text-muted-foreground"> · радиус {searchReport.radiusM} м · просчитано {searchReport.candidatesTotal} позиц.</span>
+          </summary>
+          <div className="mt-2">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Позиция</TableHead>
+                  <TableHead>СК-42 X, м</TableHead>
+                  <TableHead>СК-42 Y, м</TableHead>
+                  <TableHead className="text-right">Запас, дБ</TableHead>
+                  <TableHead className="text-right">P_rx, дБм</TableHead>
+                  <TableHead className="text-right">Потери, дБ</TableHead>
+                  <TableHead className="text-right">От исходной, м</TableHead>
+                  <TableHead className="text-right">Δ запаса, дБ</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow className="bg-muted/50 font-medium">
+                  <TableCell>Исходная точка A</TableCell>
+                  <TableCell className="font-mono">{fmtSk42SevenDigits(searchReport.baseline.x42)}</TableCell>
+                  <TableCell className="font-mono">{fmtSk42SevenDigits(searchReport.baseline.y42)}</TableCell>
+                  <TableCell className="text-right font-mono">{searchReport.baseline.linkMarginDb.toFixed(1)}</TableCell>
+                  <TableCell className="text-right font-mono">{searchReport.baseline.prxDbm.toFixed(1)}</TableCell>
+                  <TableCell className="text-right font-mono">{searchReport.baseline.medianLossDb.toFixed(1)}</TableCell>
+                  <TableCell className="text-right font-mono">0</TableCell>
+                  <TableCell className="text-right font-mono">—</TableCell>
+                </TableRow>
+                {searchReport.points
+                  .filter((p) => p.linkMarginDb > searchReport!.baseline.linkMarginDb + 0.05)
+                  .map((p, i) => (
+                    <TableRow key={`${p.x42}-${p.y42}`}>
+                      <TableCell>Кандидат {i + 1}</TableCell>
+                      <TableCell className="font-mono">{fmtSk42SevenDigits(p.x42)}</TableCell>
+                      <TableCell className="font-mono">{fmtSk42SevenDigits(p.y42)}</TableCell>
+                      <TableCell className={`text-right font-mono ${marginCls(p.linkMarginDb)}`}>{p.linkMarginDb.toFixed(1)}</TableCell>
+                      <TableCell className="text-right font-mono">{p.prxDbm.toFixed(1)}</TableCell>
+                      <TableCell className="text-right font-mono">{p.medianLossDb.toFixed(1)}</TableCell>
+                      <TableCell className="text-right font-mono">{Math.round(p.distFromOriginalM)}</TableCell>
+                      <TableCell className="text-right font-mono text-emerald-600 dark:text-emerald-400">
+                        +{(p.linkMarginDb - searchReport!.baseline.linkMarginDb).toFixed(1)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                {searchReport.optimalCount === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center text-muted-foreground">
+                      Лучше исходной позиции в радиусе {searchReport.radiusM} м не найдено — текущая точка A оптимальна.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+            <p className="text-xs text-muted-foreground mt-2">
+              Перебор по кольцам 0.25R/0.5R/0.75R/R (8/12/16/24 азимута) вокруг исходной точки A; все параметры связи
+              и приёмо-передатчиков — из выполненного расчёта, меняется только позиция A (профиль перестраивается по
+              рельефу). Позиции оцениваются локальной моделью (те же формулы, что выбранная) для скорости перебора.
+              Координаты СК-42 Гаусс–Крюгер, зона {searchReport.baseline.zone}: X — от экватора на север, Y — с номером
+              зоны (первая цифра); по 7 цифр на координату.
+            </p>
+          </div>
+        </details>
       )}
 
       {/* Обратная линия: подвижный Tx → наземный Rx */}
