@@ -40,3 +40,12 @@ export const FPS_THRESHOLD = 24
 export const KTB_DBM_HZ = 10 * Math.log10(K_BOLTZMANN * T0 * 1e3)
 
 export const CLIMATE_ZONES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q'] as const
+
+/**
+ * Интенсивность дождя R(0.01 %), мм/ч, по зонам дождя ITU-R (P.837-3, Table 1).
+ * Оценка по умолчанию для availability-отчёта (P.530), когда нет ни цифровых
+ * продуктов P.837-6, ни ручного ввода; точнее — загрузить карты ITU.
+ */
+export const RAIN_ZONE_R001_MMH: Record<string, number> = {
+  A: 8, B: 12, C: 15, D: 19, E: 22, F: 28, G: 30, H: 32, J: 35, K: 42, L: 45, M: 48, N: 53, P: 75, Q: 96,
+}

@@ -201,8 +201,47 @@ export interface PropagationResult {
 export interface BudgetRow {
   label: string
   value: number
-  unit: 'дБм' | 'дБ' | 'дБи' | 'Гц' | 'м'
+  unit: 'дБм' | 'дБ' | 'дБи' | 'Гц' | 'м' | 'ч/год'
   sign: '+' | '-' | '='
+}
+
+/** Цель по доступности: требуемый запас и выполняется ли он. */
+export interface AvailabilityTarget {
+  /** Целевая доступность, % (99.5 / 99.9 / 99.99) */
+  availabilityPercent: number
+  /** Требуемый запас на замирания (многолучёвость + дождь), дБ */
+  requiredMarginDb: number
+  /** Запас линии достаточен для цели */
+  met: boolean
+}
+
+/** Availability-отчёт по ITU-R P.530-19 (многолучёвость + дождь). */
+export interface AvailabilityReport {
+  /** Фактический запас линии, дБ */
+  marginDb: number
+  /** Фактор возникновения многолучёвости p0, % времени */
+  multipathP0Percent: number
+  /** Интенсивность дождя 0.01 %, мм/ч (null — нет данных, дождь не учитывается) */
+  rainRate001: number | null
+  /** Источник R(0.01 %): карты ITU P.837-6, ввод пользователя или зона дождя (P.837-3) */
+  rainSource: 'itu' | 'user' | 'zone' | null
+  /** Затухание в дожде за 0.01 % времени, дБ (null — нет данных) */
+  rainAttenuation001Db: number | null
+  /** Прогноз недоступности при фактическом запасе */
+  outage: {
+    /** Многолучёвость (clear-air), % времени */
+    multipathPercent: number
+    /** Дождь, % времени */
+    rainPercent: number
+    /** Суммарно, % времени */
+    totalPercent: number
+    /** Суммарно, ч/год */
+    totalHoursPerYear: number
+    /** Прогноз доступности, % */
+    availabilityPercent: number
+  }
+  /** Требуемые запасы для целевых доступностей */
+  targets: AvailabilityTarget[]
 }
 
 export interface LinkBudget {

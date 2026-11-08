@@ -1,5 +1,6 @@
 /** Экспорт результатов в JSON и CSV. */
-import type { CalculationInput, DynamicsResult, HistoryEntry, LinkBudget, PropagationResult } from './types'
+import type { AvailabilityReport, CalculationInput, DynamicsResult, HistoryEntry, LinkBudget, PropagationResult } from './types'
+import { computeAvailabilityReport } from './availability'
 
 export function buildExportPayload(
   input: CalculationInput,
@@ -25,6 +26,8 @@ export function buildExportPayload(
     },
     propagation: prop,
     budget,
+    // Availability-отчёт (P.530) вычисляется поверх бюджета — одинаково для всех движков
+    availability: computeAvailabilityReport(input, budget),
     dynamics,
   }
 }
@@ -33,7 +36,7 @@ export function toJson(payload: object): string {
   return JSON.stringify(payload, null, 2)
 }
 
-export function toCsv(payload: { input: { profile: { d: number; elev: number; clutter: number }[] }; propagation: PropagationResult; budget: LinkBudget }): string {
+export function toCsv(payload: { input: { profile: { d: number; elev: number; clutter: number }[] }; propagation: PropagationResult; budget: LinkBudget; availability?: AvailabilityReport | null }): string {
   const rows: string[][] = []
   rows.push(['Секция', 'Параметр', 'Значение'])
   rows.push(['Вход', 'Частота, МГц', String(payload.input.frequencyMhz)])
@@ -47,6 +50,22 @@ export function toCsv(payload: { input: { profile: { d: number; elev: number; cl
   rows.push(['Бюджет', 'P_rx, дБм', b.prxDbm.toFixed(2)])
   rows.push(['Бюджет', 'SNR, дБ', b.snrDb.toFixed(2)])
   rows.push(['Бюджет', 'Link margin, дБ', b.linkMarginDb.toFixed(2)])
+  const av = payload.availability
+  if (av) {
+    rows.push(['Доступность', 'Запас линии, дБ', av.marginDb.toFixed(2)])
+    rows.push(['Доступность', 'Недоступность: многолучёвость, %', av.outage.multipathPercent.toExponential(3)])
+    rows.push(['Доступность', 'Недоступность: дождь, %', av.outage.rainPercent.toExponential(3)])
+    rows.push(['Доступность', 'Недоступность: итого, ч/год', av.outage.totalHoursPerYear.toFixed(3)])
+    rows.push(['Доступность', 'Прогноз доступности, %', av.outage.availabilityPercent.toFixed(4)])
+    for (const t of av.targets) {
+      rows.push([
+        'Доступность',
+        `Требуемый запас для ${t.availabilityPercent} %, дБ`,
+        t.requiredMarginDb.toFixed(2),
+        t.met ? 'выполняется' : 'не выполняется',
+      ])
+    }
+  }
   for (const p of payload.input.profile) {
     rows.push(['Профиль', `d=${p.d.toFixed(0)} м`, `elev=${p.elev.toFixed(1)}`, `clutter=${p.clutter.toFixed(1)}`])
   }

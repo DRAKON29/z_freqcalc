@@ -22,3 +22,20 @@ test('обратная линия присутствует в результат
   await expect(page.getByText('173.0 дБ').first()).toBeVisible({ timeout: 20000 })
   await expect(page.getByText(/Обратная линия/).first()).toBeVisible()
 })
+
+test('availability-отчёт P.530: карточка, прогноз недоступности, цели доступности', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Рассчитать', exact: true }).click()
+  await expect(page.getByText('173.0 дБ').first()).toBeVisible({ timeout: 20000 })
+
+  // Карточка availability-отчёта
+  await expect(page.getByText('Доступность связи (ITU-R P.530)').first()).toBeVisible({ timeout: 10000 })
+  // Прогноз недоступности в ч/год или мин/год
+  await expect(page.getByText(/ч\/год|мин\/год/).first()).toBeVisible()
+  // Таблица целей: 99.5 / 99.9 / 99.99 %
+  await expect(page.getByText('99.99 %')).toBeVisible()
+  // Источник R(0.01 %) по умолчанию — оценка по зоне дождя (P.837-3)
+  await expect(page.getByText(/оценка по зоне дождя/).first()).toBeVisible()
+  // Строка прогноза недоступности в расходе бюджета
+  await expect(page.getByText('Прогноз недоступности (P.530)').first()).toBeVisible()
+})

@@ -264,6 +264,8 @@ function renderEntry(doc: jsPDF, e: HistoryEntry, pageNo: number, total: number)
   // Данные по радиосвязи
   y = sectionTitle(doc, 'Данные по радиосвязи (бюджет линии)', y)
   const budget = e.budget
+  // Прогноз недоступности (P.530) добавляется в budget.expense при расчёте
+  const outageRow = budget.expense.find((r) => r.label === 'Прогноз недоступности (P.530)')
   y = renderKeyValueGrid(doc, [
     ['ЭИИМ (EIRP)', `${fmt(budget.eirpDbm, 1)} дБм`],
     ['Потери на трассе', `${fmt(budget.pathLossDb, 1)} дБ`],
@@ -271,6 +273,7 @@ function renderEntry(doc: jsPDF, e: HistoryEntry, pageNo: number, total: number)
     ['Мощность шума (N)', `${fmt(budget.noisePowerDbm, 1)} дБм`],
     ['Отношение сигнал/шум (SNR)', `${fmt(budget.snrDb, 1)} дБ`],
     ['Требуемое Eb/N0', `${fmt(budget.ebN0RequiredDb, 1)} дБ`],
+    ...(outageRow ? ([['Прогноз недоступности (P.530)', `${fmt(outageRow.value, 2)} ч/год`]] as [string, string][]) : []),
   ], MARGIN, y)
 
   // Запас — выделенная строка

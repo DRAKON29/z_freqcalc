@@ -6,6 +6,7 @@
 import { create } from 'zustand'
 import type {
   AtmosphereParams,
+  AvailabilityReport,
   BackendId,
   CalculationInput,
   DynamicsResult,
@@ -21,6 +22,7 @@ import type {
 } from '@/lib/radio/types'
 import { createModel, defaultBackend } from '@/lib/radio/models'
 import { computeLinkBudget } from '@/lib/radio/budget'
+import { availabilityExpenseRow, computeAvailabilityReport } from '@/lib/radio/availability'
 import { buildProfile, createHgtDem, createSyntheticDem, makeClutterSampler, parseHgt, pathTileCoverage, type ClutterGeoJson, type HgtTile } from '@/lib/radio/terrain'
 import { distanceM, bearingDeg, wgs84ToSk42, sk42ToWgs84 } from '@/lib/radio/coordinates'
 import { getDeviceId, saveHistory, syncEntry, listItuMaps, getItuMap, deleteItuMap } from '@/lib/radio/history'
@@ -147,10 +149,14 @@ export interface RadioState {
   calculating: boolean
   result: PropagationResult | null
   budget: LinkBudget | null
+  /** Availability-отчёт P.530 для прямой линии */
+  availability: AvailabilityReport | null
   /** Обратная линия: подвижный Tx → наземный Rx (одна частота) */
   reverseResult: PropagationResult | null
   reverseBudget: LinkBudget | null
   reverseInput: CalculationInput | null
+  /** Availability-отчёт P.530 для обратной линии */
+  reverseAvailability: AvailabilityReport | null
   /** Обратная линия в режиме «диапазон»: развёртка по частотам подвижного передатчика */
   reverseRangeResults: RangeFreqResult[] | null
   rangeResults: RangeFreqResult[] | null
@@ -234,9 +240,11 @@ export const useRadioStore = create<RadioState>((set, get) => ({
   calculating: false,
   result: null,
   budget: null,
+  availability: null,
   reverseResult: null,
   reverseBudget: null,
   reverseInput: null,
+  reverseAvailability: null,
   reverseRangeResults: null,
   rangeResults: null,
   lastInput: null,
@@ -558,10 +566,20 @@ export const useRadioStore = create<RadioState>((set, get) => ({
         historyFreq = s.frequencyMhz
       }
 
+      // Availability-отчёт (P.530) для прямой линии: считается поверх бюджета,
+      // прогноз недоступности добавляется строкой в расход (попадает в историю и PDF)
+      let availability: AvailabilityReport | null = null
+      const fwdReport = computeAvailabilityReport(lastInput, budget)
+      if (fwdReport) {
+        availability = fwdReport
+        budget = { ...budget, expense: [...budget.expense, availabilityExpenseRow(fwdReport)] }
+      }
+
       // Обратная линия: по режиму частоты подвижного передатчика
       let reverseResult: PropagationResult | null = null
       let reverseBudget: LinkBudget | null = null
       let reverseInput: CalculationInput | null = null
+      let reverseAvailability: AvailabilityReport | null = null
       let reverseRangeResults: RangeFreqResult[] | null = null
       if (s.mobileFrequencyMode === 'range') {
         const freqs = buildFreqList(s.mobileFreqFromMhz, s.mobileFreqToMhz)
@@ -593,13 +611,22 @@ export const useRadioStore = create<RadioState>((set, get) => ({
           }
         }
       }
+      if (reverseInput && reverseBudget) {
+        const revReport = computeAvailabilityReport(reverseInput, reverseBudget)
+        if (revReport) {
+          reverseAvailability = revReport
+          reverseBudget = { ...reverseBudget, expense: [...reverseBudget.expense, availabilityExpenseRow(revReport)] }
+        }
+      }
 
       set({
         result,
         budget,
+        availability,
         reverseResult,
         reverseBudget,
         reverseInput,
+        reverseAvailability,
         reverseRangeResults,
         rangeResults,
         lastInput,
@@ -698,7 +725,7 @@ export const useRadioStore = create<RadioState>((set, get) => ({
     })
   },
 
-  resetResults: () => set({ result: null, budget: null, reverseResult: null, reverseBudget: null, reverseInput: null, reverseRangeResults: null, rangeResults: null, dynamics: null, dynamicsAll: [], lastError: null }),
+  resetResults: () => set({ result: null, budget: null, availability: null, reverseResult: null, reverseBudget: null, reverseInput: null, reverseAvailability: null, reverseRangeResults: null, rangeResults: null, dynamics: null, dynamicsAll: [], lastError: null }),
 }))
 
 /** СК-42 для точки (для отображения в UI). */

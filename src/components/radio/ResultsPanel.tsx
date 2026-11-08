@@ -31,6 +31,7 @@ import { earthBulgeM } from '@/lib/radio/fspl'
 import { fresnelRadiusM } from '@/lib/radio/fresnel'
 import { buildExportPayload, toJson, toCsv, download } from '@/lib/radio/export'
 import { linkStatus, type LinkStatus } from '@/lib/radio/budget'
+import { availabilitySummary } from '@/lib/radio/availability'
 import { CoveragePanel } from '@/components/radio/CoveragePanel'
 import { AlertTriangle, Download, FileJson, FileSpreadsheet } from 'lucide-react'
 
@@ -58,9 +59,30 @@ function StatusChip({ status }: { status: LinkStatus }) {
   )
 }
 
+/** Значение строки бюджета: ч/год — с двумя знаками (значения часто < 1), остальное — с одним. */
+function fmtRowValue(r: { value: number; unit: string }): string {
+  return r.unit === 'ч/год' ? r.value.toFixed(2) : r.value.toFixed(1)
+}
+
+/** Недоступность в человекочитаемом виде: ч/год или мин/год. */
+function fmtHours(hoursPerYear: number): string {
+  if (hoursPerYear < 1 / 60) return '< 1 мин/год'
+  if (hoursPerYear < 1) return `${(hoursPerYear * 60).toFixed(0)} мин/год`
+  return `${hoursPerYear.toFixed(1)} ч/год`
+}
+
+/** Малые проценты времени: < 0.001 % — в экспоненциальной форме. */
+function fmtSmallPercent(p: number): string {
+  return p >= 0.001 ? `${p.toFixed(3)} %` : `${p.toExponential(1)} %`
+}
+
+function rainSourceLabel(src: 'itu' | 'user' | 'zone' | null): string {
+  return src === 'itu' ? 'карты ITU P.837-6' : src === 'user' ? 'ввод пользователя' : src === 'zone' ? 'оценка по зоне дождя (P.837-3)' : 'не задано'
+}
+
 export function ResultsPanel() {
   const s = useRadioStore()
-  const { result, budget, lastInput, rangeResults, reverseResult, reverseBudget, reverseInput, reverseRangeResults, mobileFrequencyMhz, mobileFrequencyMode, terrainWarning } = s
+  const { result, budget, availability, lastInput, rangeResults, reverseResult, reverseBudget, reverseInput, reverseAvailability, reverseRangeResults, mobileFrequencyMhz, mobileFrequencyMode, terrainWarning } = s
 
   const profileData = useMemo(() => {
     if (!lastInput) return []
@@ -311,7 +333,7 @@ export function ResultsPanel() {
                   <TableRow key={i} className={r.sign === '=' ? 'bg-muted/50 font-medium' : ''}>
                     <TableCell>{r.label}</TableCell>
                     <TableCell className="text-right font-mono">
-                      {r.value.toFixed(1)} {r.unit}
+                      {fmtRowValue(r)} {r.unit}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -320,6 +342,80 @@ export function ResultsPanel() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Availability-отчёт (ITU-R P.530) */}
+      {availability && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex flex-wrap items-center justify-between gap-2">
+              Доступность связи (ITU-R P.530)
+              <Badge variant="outline">прогноз при запасе {availability.marginDb.toFixed(1)} дБ</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Card>
+                <CardContent className="pt-4">
+                  <p className="text-xs text-muted-foreground">Прогноз недоступности</p>
+                  <p className="text-xl font-semibold">{fmtHours(availability.outage.totalHoursPerYear)}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4">
+                  <p className="text-xs text-muted-foreground">Прогноз доступности</p>
+                  <p className="text-xl font-semibold">
+                    {availability.outage.availabilityPercent > 99.999
+                      ? '> 99.999'
+                      : availability.outage.availabilityPercent.toFixed(3)}{' '}
+                    <span className="text-sm">%</span>
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4">
+                  <p className="text-xs text-muted-foreground">
+                    Дождь R(0.01 %) — {rainSourceLabel(availability.rainSource)}
+                  </p>
+                  <p className="text-xl font-semibold">
+                    {availability.rainRate001 !== null ? availability.rainRate001.toFixed(0) : '—'}{' '}
+                    <span className="text-sm">мм/ч</span>
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Разбивка недоступности: многолучёвость {fmtSmallPercent(availability.outage.multipathPercent)}, дождь{' '}
+              {fmtSmallPercent(availability.outage.rainPercent)} времени.
+            </p>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Цель доступности</TableHead>
+                  <TableHead className="text-right">Требуемый запас, дБ</TableHead>
+                  <TableHead className="text-right">Фактический запас, дБ</TableHead>
+                  <TableHead className="text-right">Итог</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {availability.targets.map((t) => (
+                  <TableRow key={t.availabilityPercent}>
+                    <TableCell>{t.availabilityPercent} %</TableCell>
+                    <TableCell className="text-right font-mono">{t.requiredMarginDb.toFixed(1)}</TableCell>
+                    <TableCell className="text-right font-mono">{availability.marginDb.toFixed(1)}</TableCell>
+                    <TableCell className={`text-right font-semibold ${t.met ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                      {t.met ? '✓' : '✗'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <p className="text-xs text-muted-foreground">
+              Метод P.530-19: многолучёвость p₀ = {availability.multipathP0Percent.toFixed(3)} % → p = p₀·10^(−FM/10);
+              дождь — A(0.01 %) по P.838 с path reduction factor (d₀ = 35·e^(−0.015·R₀.₀₁)), интерполяция A(p) по §2.4.1.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Обратная линия: подвижный Tx → наземный Rx */}
       {reverseBudget && reverseResult && reverseInput ? (
@@ -372,6 +468,11 @@ export function ResultsPanel() {
                 </p>
               </div>
             )}
+            {reverseAvailability && (
+              <p className="text-xs text-muted-foreground">
+                Прогноз доступности (P.530): {availabilitySummary(reverseAvailability)}.
+              </p>
+            )}
             <CardContent className="grid gap-4 md:grid-cols-2 p-0">
               <div>
                 <p className="text-sm font-medium mb-2">Приход</p>
@@ -408,7 +509,7 @@ export function ResultsPanel() {
                       <TableRow key={i} className={r.sign === '=' ? 'bg-muted/50 font-medium' : ''}>
                         <TableCell>{r.label}</TableCell>
                         <TableCell className="text-right font-mono">
-                          {r.value.toFixed(1)} {r.unit}
+                          {fmtRowValue(r)} {r.unit}
                         </TableCell>
                       </TableRow>
                     ))}

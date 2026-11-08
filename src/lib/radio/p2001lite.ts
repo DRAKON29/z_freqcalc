@@ -31,6 +31,23 @@ export function radioHorizonKm(h1M: number, h2M: number, kFactor: number): numbe
   return 4.12 * (Math.sqrt(Math.max(0, h1M)) + Math.sqrt(Math.max(0, h2M))) * Math.sqrt(k / (4 / 3))
 }
 
+/** Климатические коэффициенты многолучёвости по зонам дождя ITU-R (упрощение P.530). */
+export const CLIMATE_FACTORS: Record<string, number> = {
+  A: 0.2, B: 0.4, C: 0.6, D: 0.8, E: 0.3, F: 0.9, G: 1.2, H: 1.5, J: 1.0, K: 1.1, L: 0.7, M: 0.5, N: 0.4, P: 0.3, Q: 0.35,
+}
+
+/**
+ * Фактор возникновения многолучёвости p0, % времени (упрощённая модель P.530):
+ * p0 = cf·z·(d/50)³·0.05, где cf — климатический коэффициент зоны дождя,
+ * z — поправка зоны TropoClim (аппроксимация Annex E P.2001-6: полярные 0.7,
+ * умеренные 1.0, тропические 1.3).
+ */
+export function multipathOccurrenceFactor(climateZone: string, distanceKm: number, tropoZone?: number): number {
+  const cf = CLIMATE_FACTORS[climateZone] ?? 0.8
+  const zMult = tropoZoneMultiplier(tropoZone)
+  return cf * zMult * Math.pow(distanceKm / 50, 3) * 0.05 // %
+}
+
 /** Медианные потери: FSPL + дифракция + тропосферное рассеяние за горизонтом. */
 export function medianLossFsplP526(
   input: CalculationInput,
@@ -196,11 +213,7 @@ export function computeP2001Lite(input: CalculationInput): PropagationResult {
 
   // Вероятность многолучёвости p0 (упрощённо, зависит от климатической зоны и длины);
   // при загруженной карте TropoClim зона трассы корректирует климатический коэффициент
-  // (аппроксимация Annex E P.2001-6: полярные зоны 0.7, умеренные 1.0, тропические 1.3)
-  const climateFactor: Record<string, number> = { A: 0.2, B: 0.4, C: 0.6, D: 0.8, E: 0.3, F: 0.9, G: 1.2, H: 1.5, J: 1.0, K: 1.1, L: 0.7, M: 0.5, N: 0.4, P: 0.3, Q: 0.35 }
-  const cf = climateFactor[input.climateZone] ?? 0.8
-  const zMult = tropoZoneMultiplier(env?.tropoZone)
-  const p0 = cf * zMult * Math.pow(dKm / 50, 3) * 0.05 // %
+  const p0 = multipathOccurrenceFactor(input.climateZone, dKm, env?.tropoZone)
   const multipathActive = p0 > 0.001
 
   // Дождь из карт ITU: CCDF R(p) по P.837-6 (шаги 3–5) из Pr6, Mt и β;

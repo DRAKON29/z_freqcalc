@@ -53,7 +53,8 @@ function rainAlphaFit(fMhz: number, pol: 'vertical' | 'horizontal' | 'circular')
 
 /**
  * Эффективная длина трассы в дожде.
- *  • terrestrial (по умолчанию): P.530/P.838, deff = d / (1 + d/d0), d0 = 35 км;
+ *  • terrestrial (по умолчанию): P.530/P.838, deff = d / (1 + d/d0);
+ *    d0 = 35 км, либо задан явно (P.530-19 §2.4.1: d0 = 35·e^(−0.015·R0.01));
  *  • наклонная (заданы rainHeightKm и elevationDeg): P.838-3 §1,
  *    Ls = (hR − hs)/sin θ, ограничена длиной трассы.
  */
@@ -62,12 +63,12 @@ export function rainLossDb(
   rainRateMmH: number,
   freqMhz: number,
   pol: 'vertical' | 'horizontal' | 'circular',
-  opts?: { rainHeightKm?: number; stationHeightM?: number; elevationDeg?: number },
+  opts?: { rainHeightKm?: number; stationHeightM?: number; elevationDeg?: number; d0Km?: number },
 ): number {
   if (rainRateMmH <= 0) return 0
   const dKm = distanceM / 1000
   const gamma = rainSpecificAttenuationDbKm(rainRateMmH, freqMhz, pol)
-  const { rainHeightKm, stationHeightM = 0, elevationDeg } = opts ?? {}
+  const { rainHeightKm, stationHeightM = 0, elevationDeg, d0Km = 35 } = opts ?? {}
   if (rainHeightKm !== undefined && elevationDeg !== undefined) {
     // Наклонный путь (P.838-3 §1): Ls = (hR − hs)/sin θ, cap по длине трассы
     const sinEl = Math.sin((Math.max(elevationDeg, 0.5) * Math.PI) / 180)
@@ -75,8 +76,14 @@ export function rainLossDb(
     const pathKm = Number.isFinite(lsM) && lsM > 0 ? Math.min(distanceM, lsM) / 1000 : dKm
     return gamma * pathKm
   }
-  const dEff = dKm / (1 + dKm / 35)
+  const dEff = dKm / (1 + dKm / Math.max(1, d0Km))
   return gamma * dEff
+}
+
+/** Параметр эффективной длины d0, км (P.530-19 §2.4.1): 35·e^(−0.015·R0.01), clamp [4, 35]. */
+export function rainPathReductionD0Km(rainRate001MmH: number): number {
+  if (!(rainRate001MmH > 0)) return 35
+  return Math.min(35, Math.max(4, 35 * Math.exp(-0.015 * rainRate001MmH)))
 }
 
 /**
