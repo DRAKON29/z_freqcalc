@@ -35,6 +35,9 @@ import { availabilitySummary } from '@/lib/radio/availability'
 import { auditClearance, type ClearanceVerdict } from '@/lib/radio/clearance'
 import { diffractionMethodsDb } from '@/lib/radio/diffraction'
 import { fmtSk42SevenDigits } from '@/lib/radio/optimal-point'
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
+import { CandidateCoveragePreview } from '@/components/radio/CoveragePreview'
+import { PieChart } from 'lucide-react'
 import { CoveragePanel } from '@/components/radio/CoveragePanel'
 import { AlertTriangle, Download, FileJson, FileSpreadsheet } from 'lucide-react'
 
@@ -169,6 +172,13 @@ export function ResultsPanel() {
     loss: +r.medianLossDb.toFixed(1),
     margin: +r.linkMarginDb.toFixed(1),
   }))
+
+  // Применить кандидатную позицию поиска: точка A переносится в позицию
+  // кандидата, расчёт перезапускается (поиск — заново от новой точки, если включён)
+  const applyCandidate = (p: { lat: number; lon: number }) => {
+    s.setPointA({ lat: p.lat, lon: p.lon })
+    void s.calculate()
+  }
 
   const doExportJson = () => {
     const payload = buildExportPayload(lastInput!, result, budget, s.dynamics ?? undefined)
@@ -465,6 +475,7 @@ export function ResultsPanel() {
                   <TableHead className="text-right">Потери, дБ</TableHead>
                   <TableHead className="text-right">От исходной, м</TableHead>
                   <TableHead className="text-right">Δ запаса, дБ</TableHead>
+                  <TableHead>Диаграмма · применение</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -477,6 +488,7 @@ export function ResultsPanel() {
                   <TableCell className="text-right font-mono">{searchReport.baseline.medianLossDb.toFixed(1)}</TableCell>
                   <TableCell className="text-right font-mono">0</TableCell>
                   <TableCell className="text-right font-mono">—</TableCell>
+                  <TableCell className="text-muted-foreground">—</TableCell>
                 </TableRow>
                 {searchReport.points
                   .filter((p) => p.linkMarginDb > searchReport!.baseline.linkMarginDb + 0.05)
@@ -492,11 +504,43 @@ export function ResultsPanel() {
                       <TableCell className="text-right font-mono text-emerald-600 dark:text-emerald-400">
                         +{(p.linkMarginDb - searchReport!.baseline.linkMarginDb).toFixed(1)}
                       </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <HoverCard openDelay={200} closeDelay={100}>
+                          <HoverCardTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              aria-label={`Диаграмма позиции ${i + 1}`}
+                            >
+                              <PieChart className="h-4 w-4" />
+                            </Button>
+                          </HoverCardTrigger>
+                          <HoverCardContent className="w-[260px] p-2">
+                            <CandidateCoveragePreview
+                              candidateA={{ lat: p.lat, lon: p.lon }}
+                              baseInput={lastInput!}
+                              equipment={s.equipment}
+                              hgtTiles={s.hgtTiles}
+                              clutter={s.clutter}
+                            />
+                          </HoverCardContent>
+                        </HoverCard>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 ml-1"
+                          aria-label={`Применить позицию ${i + 1}`}
+                          onClick={() => applyCandidate({ lat: p.lat, lon: p.lon })}
+                        >
+                          Применить
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 {searchReport.optimalCount === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground">
                       Лучше исходной позиции в радиусе {searchReport.radiusM} м не найдено — текущая точка A оптимальна.
                     </TableCell>
                   </TableRow>
@@ -507,8 +551,10 @@ export function ResultsPanel() {
               Перебор по кольцам 0.25R/0.5R/0.75R/R (8/12/16/24 азимута) вокруг исходной точки A; все параметры связи
               и приёмо-передатчиков — из выполненного расчёта, меняется только позиция A (профиль перестраивается по
               рельефу). Позиции оцениваются локальной моделью (те же формулы, что выбранная) для скорости перебора.
-              Координаты СК-42 Гаусс–Крюгер, зона {searchReport.baseline.zone}: X — от экватора на север, Y — с номером
-              зоны (первая цифра); по 7 цифр на координату.
+              Пиктограмма диаграммы — предпросмотр покрытия от позиции кандидата (наведите курсор); «Применить»
+              переносит точку A в позицию кандидата и пересчитывает. Координаты СК-42 Гаусс–Крюгер, зона{' '}
+              {searchReport.baseline.zone}: X — от экватора на север, Y — с номером зоны (первая цифра); по 7 цифр
+              на координату.
             </p>
           </div>
         </details>

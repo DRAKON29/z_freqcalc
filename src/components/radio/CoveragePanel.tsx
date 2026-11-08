@@ -4,11 +4,11 @@
  * Круговая диаграмма радиосигнала (polar coverage diagram):
  *  • строится автоматически после расчёта по параметрам трассы;
  *  • граница зоны связи считается по азимутам с учётом рельефа и препятствий;
- *  • рельеф отображается подложкой внутри круга расчёта;
+ *  • рельеф отображается подложкой внутри круга расчёта (без слоя карты);
  *  • радиус расчёта: «длина трассы + 10 км» (по умолчанию) или
  *    фиксированные значения до 200 км с шагом 15 км.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRadioStore } from '@/store/radio-store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -16,344 +16,17 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, RotateCcw } from 'lucide-react'
+import { CoverageDiagram } from './CoverageDiagram'
 import {
   autoRadiusKm,
   computeCoverage,
   radiusOptions,
-  ringStepKm,
   sampleElevationGrid,
   STRONG_MARGIN_DB,
   type CoverageResult,
   type ElevationGrid,
 } from '@/lib/radio/coverage'
 import { createHgtDem, createSyntheticDem, makeClutterSampler } from '@/lib/radio/terrain'
-
-/** Размер канвы в физических пикселях (2× для чёткости). */
-const CANVAS_PX = 1120
-
-// ---- Подложка-карта (гибрид: спутник + населённые пункты) ----
-// Только для автоматического радиуса «длина трассы + 10 км»; слои снизу вверх:
-// карта → рельеф (полупрозрачный) → диаграмма. Для остальных радиусов — только рельеф.
-
-const TILE_PX = 256
-
-/** Кэш тайлов (URL → изображение), чтобы не перекачивать при перестроении. */
-const tileCache = new Map<string, HTMLImageElement>()
-
-function loadTile(url: string): Promise<HTMLImageElement | null> {
-  const cached = tileCache.get(url)
-  if (cached) return Promise.resolve(cached.naturalWidth > 0 ? cached : null)
-  return new Promise((resolve) => {
-    const img = new Image()
-    img.crossOrigin = 'anonymous'
-    img.onload = () => {
-      if (tileCache.size > 400) tileCache.clear()
-      tileCache.set(url, img)
-      resolve(img)
-    }
-    img.onerror = () => resolve(null)
-    img.src = url
-  })
-}
-
-/**
- * Слой гибридной карты для квадрата подложки (центр, полусторона halfM метров):
- * Esri World Imagery (спутник) + Esri Boundaries and Places (подписи НП).
- * Ошибка загрузки (офлайн/CORS) — null, диаграмма строится только на рельефе.
- */
-async function buildMapLayer(
-  center: { lat: number; lon: number },
-  halfM: number,
-  sizePx: number,
-): Promise<HTMLCanvasElement | null> {
-  const cosLat = Math.cos((center.lat * Math.PI) / 180)
-  const dLat = halfM / 111320
-  const dLon = halfM / (111320 * cosLat)
-  const latN = center.lat + dLat
-  const lonW = center.lon - dLon
-  const lonE = center.lon + dLon
-  // Зум: сторона квадрата в пикселях тайловой сетки ~1024–2048
-  let z = 5
-  for (; z < 17; z++) {
-    const pxSpan = ((lonE - lonW) / 360) * TILE_PX * 2 ** z
-    if (pxSpan <= 2048) break
-  }
-  const world = TILE_PX * 2 ** z
-  const mercX = (lon: number) => ((lon + 180) / 360) * world
-  const mercY = (lat: number) => {
-    const s = Math.sin((Math.max(-85, Math.min(85, lat)) * Math.PI) / 180)
-    return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * world
-  }
-  const x0 = mercX(lonW)
-  const x1 = mercX(lonE)
-  const y0 = mercY(latN)
-  const latS = center.lat - dLat
-  const y1 = mercY(latS)
-  const tx0 = Math.floor(x0 / TILE_PX)
-  const tx1 = Math.floor((x1 - 1e-9) / TILE_PX)
-  const ty0 = Math.floor(y0 / TILE_PX)
-  const ty1 = Math.floor((y1 - 1e-9) / TILE_PX)
-  const cols = tx1 - tx0 + 1
-  const rows = ty1 - ty0 + 1
-  if (cols <= 0 || rows <= 0 || cols * rows > 120) return null
-  const satUrls: string[] = []
-  const lblUrls: string[] = []
-  for (let ty = ty0; ty <= ty1; ty++) {
-    for (let tx = tx0; tx <= tx1; tx++) {
-      satUrls.push(`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${ty}/${tx}`)
-      lblUrls.push(`https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/${z}/${ty}/${tx}`)
-    }
-  }
-  const [sat, lbl] = await Promise.all([
-    Promise.all(satUrls.map(loadTile)),
-    Promise.all(lblUrls.map(loadTile)),
-  ])
-  if (!sat.some(Boolean)) return null
-  const cv = document.createElement('canvas')
-  cv.width = sizePx
-  cv.height = sizePx
-  const ctx = cv.getContext('2d')
-  if (!ctx) return null
-  const scale = sizePx / (x1 - x0)
-  const place = (img: HTMLImageElement | null, tx: number, ty: number) => {
-    if (!img) return
-    ctx.drawImage(img, (tx * TILE_PX - x0) * scale, (ty * TILE_PX - y0) * scale, TILE_PX * scale + 1, TILE_PX * scale + 1)
-  }
-  sat.forEach((img, i) => place(img, tx0 + (i % cols), ty0 + Math.floor(i / cols)))
-  lbl.forEach((img, i) => place(img, tx0 + (i % cols), ty0 + Math.floor(i / cols)))
-  return cv
-}
-
-/** Гипсометрическая палитра рельефа: низины → вершины. */
-const TERRAIN_STOPS: Array<[number, [number, number, number]]> = [
-  [0.0, [86, 118, 76]],
-  [0.3, [126, 149, 89]],
-  [0.55, [172, 160, 100]],
-  [0.78, [148, 117, 82]],
-  [1.0, [208, 201, 188]],
-]
-
-function terrainColor(elev: number, grid: ElevationGrid): [number, number, number] {
-  // вне тайлов высота 0 м — «нет данных»
-  if (grid.nodataZero && elev === 0) return [148, 163, 184]
-  const span = grid.maxElev - grid.minElev
-  const t = span > 0 ? (elev - grid.minElev) / span : 0.5
-  for (let i = 1; i < TERRAIN_STOPS.length; i++) {
-    const [t1, c1] = TERRAIN_STOPS[i]
-    const [t0, c0] = TERRAIN_STOPS[i - 1]
-    if (t <= t1) {
-      const k = (t - t0) / (t1 - t0 || 1)
-      return [
-        Math.round(c0[0] + (c1[0] - c0[0]) * k),
-        Math.round(c0[1] + (c1[1] - c0[1]) * k),
-        Math.round(c0[2] + (c1[2] - c0[2]) * k),
-      ]
-    }
-  }
-  return TERRAIN_STOPS[TERRAIN_STOPS.length - 1][1]
-}
-
-interface DiagramProps {
-  coverage: CoverageResult
-  grid: ElevationGrid
-  radiusKm: number
-  /** Центр круга (точка A) — для подложки-карты */
-  center: { lat: number; lon: number }
-  /** Подложка-карта (гибрид) — только для радиуса «длина трассы + 10 км» */
-  showMap: boolean
-}
-
-/** Отрисовка диаграммы на канве (азимут 0° — север, по часовой). */
-function CoverageDiagram({ coverage, grid, radiusKm, center, showMap }: DiagramProps) {
-  const ref = useRef<HTMLCanvasElement>(null)
-  const [mapLayer, setMapLayer] = useState<HTMLCanvasElement | null>(null)
-  // Подложка активна только для радиуса «трасса + 10 км» (showMap)
-  const activeMap = showMap ? mapLayer : null
-
-  // Слой карты строится асинхронно; при ошибке (офлайн/CORS) — null, только рельеф
-  useEffect(() => {
-    if (!showMap) return
-    let cancelled = false
-    buildMapLayer(center, grid.halfM, CANVAS_PX).then((ml) => {
-      if (!cancelled) setMapLayer(ml)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [showMap, center, grid.halfM])
-
-  useEffect(() => {
-    const canvas = ref.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    const S = CANVAS_PX
-    const c = S / 2
-    const pad = 36
-    const maxR = c - pad
-    const scale = maxR / (radiusKm * 1000)
-
-    const toXY = (azDeg: number, km: number): [number, number] => {
-      const a = (azDeg * Math.PI) / 180
-      const r = km * 1000 * scale
-      return [c + r * Math.sin(a), c - r * Math.cos(a)]
-    }
-
-    ctx.clearRect(0, 0, S, S)
-    ctx.fillStyle = '#f1f2ee'
-    ctx.fillRect(0, 0, S, S)
-
-    // Круг расчёта — клип для подложки и зон
-    ctx.save()
-    ctx.beginPath()
-    ctx.arc(c, c, maxR, 0, 2 * Math.PI)
-    ctx.clip()
-
-    // ---- Слой 1: карта (гибрид: спутник + населённые пункты) ----
-    if (activeMap) ctx.drawImage(activeMap, c - maxR, c - maxR, maxR * 2, maxR * 2)
-
-    // ---- Слой 2: рельеф (поверх карты полупрозрачный, без карты — сплошной) ----
-    const n = grid.n
-    const off = document.createElement('canvas')
-    off.width = n
-    off.height = n
-    const octx = off.getContext('2d')
-    if (octx) {
-      const img = octx.createImageData(n, n)
-      for (let i = 0; i < n * n; i++) {
-        const [r, g, b] = terrainColor(grid.data[i], grid)
-        img.data[i * 4] = r
-        img.data[i * 4 + 1] = g
-        img.data[i * 4 + 2] = b
-        img.data[i * 4 + 3] = 255
-      }
-      octx.putImageData(img, 0, 0)
-      ctx.imageSmoothingEnabled = true
-      ctx.globalAlpha = activeMap ? 0.55 : 1
-      ctx.drawImage(off, c - maxR, c - maxR, maxR * 2, maxR * 2)
-      ctx.globalAlpha = 1
-    }
-
-    // ---- Зоны покрытия (ступенчатая граница по азимутам, без диагоналей) ----
-    // Дуга сектора i идёт на радиусе r_i; на границе секторов радиус
-    // переключается на r_{i+1} — граница повторяет данные каждого азимута.
-    const phiOf = (azDeg: number, halfStepDeg: number) => ((azDeg + halfStepDeg - 90) * Math.PI) / 180
-    const pathFor = (key: 'maxKm' | 'strongKm') => {
-      ctx.beginPath()
-      const rads = coverage.radials
-      // старт: (азимут первого − полшага) на радиусе первого
-      const startPhi = phiOf(rads[0].azDeg, -coverage.azimuthStepDeg / 2)
-      const startR = (rads[0][key] ?? 0) * 1000 * scale
-      ctx.moveTo(c + startR * Math.cos(startPhi), c + startR * Math.sin(startPhi))
-      for (let i = 0; i < rads.length; i++) {
-        const cur = rads[i]
-        const next = rads[(i + 1) % rads.length]
-        const rCur = ((cur[key] ?? 0) * 1000 * scale) || 0
-        const rNext = ((next[key] ?? 0) * 1000 * scale) || 0
-        // сектор текущего азимута: [az − полшага … az + полшага] на rCur
-        ctx.arc(c, c, rCur, phiOf(cur.azDeg, -coverage.azimuthStepDeg / 2), phiOf(cur.azDeg, coverage.azimuthStepDeg / 2))
-        // радиальный переход на радиус следующего азимута (canvas проводит
-        // прямую от текущей точки к началу дуги; дуга нулевой длины на стыке)
-        const endPhi = phiOf(next.azDeg, -coverage.azimuthStepDeg / 2)
-        const startPhiNext = phiOf(cur.azDeg, coverage.azimuthStepDeg / 2)
-        ctx.arc(c, c, rNext, startPhiNext, endPhi >= startPhiNext ? endPhi : endPhi + 2 * Math.PI)
-      }
-      ctx.closePath()
-    }
-    if (coverage.stats.strongMinKm !== null) {
-      pathFor('strongKm')
-      ctx.fillStyle = 'rgba(4, 120, 87, 0.5)'
-      ctx.fill()
-    }
-    if (coverage.stats.minKm !== null) {
-      pathFor('maxKm')
-      ctx.fillStyle = 'rgba(16, 185, 129, 0.30)'
-      ctx.fill()
-      ctx.strokeStyle = '#047857'
-      ctx.lineWidth = 3
-      ctx.stroke()
-    }
-
-    // ---- Сетка колец дальности ----
-    const stepKm = ringStepKm(radiusKm)
-    ctx.strokeStyle = 'rgba(30, 41, 59, 0.35)'
-    ctx.lineWidth = 1.5
-    ctx.fillStyle = '#1e293b'
-    ctx.font = '20px system-ui, sans-serif'
-    ctx.textAlign = 'left'
-    for (let km = stepKm; km <= radiusKm + 1e-9; km += stepKm) {
-      ctx.beginPath()
-      ctx.arc(c, c, km * 1000 * scale, 0, 2 * Math.PI)
-      ctx.stroke()
-      ctx.fillText(`${km} км`, c + 6, c - km * 1000 * scale + 22)
-    }
-
-    // ---- Трасса A → Б ----
-    const [bx, by] = toXY(coverage.routeAzDeg, Math.min(coverage.routeKm, radiusKm * 1.2))
-    ctx.setLineDash([12, 9])
-    ctx.strokeStyle = '#dc2626'
-    ctx.lineWidth = 3
-    ctx.beginPath()
-    ctx.moveTo(c, c)
-    ctx.lineTo(bx, by)
-    ctx.stroke()
-    ctx.setLineDash([])
-    if (coverage.routeKm <= radiusKm) {
-      ctx.beginPath()
-      ctx.arc(bx, by, 8, 0, 2 * Math.PI)
-      ctx.fillStyle = '#dc2626'
-      ctx.fill()
-      ctx.fillStyle = '#7f1d1d'
-      ctx.font = 'bold 26px system-ui, sans-serif'
-      ctx.fillText('Б', bx + 12, by - 12)
-    }
-
-    // ---- Передатчик в центре ----
-    ctx.beginPath()
-    ctx.arc(c, c, 9, 0, 2 * Math.PI)
-    ctx.fillStyle = '#111827'
-    ctx.fill()
-    ctx.strokeStyle = '#ffffff'
-    ctx.lineWidth = 3
-    ctx.stroke()
-    ctx.fillStyle = '#111827'
-    ctx.font = 'bold 26px system-ui, sans-serif'
-    ctx.fillText('A', c + 14, c - 14)
-
-    ctx.restore()
-
-    // ---- Рамка круга и румбы ----
-    ctx.beginPath()
-    ctx.arc(c, c, maxR, 0, 2 * Math.PI)
-    ctx.strokeStyle = '#94a3b8'
-    ctx.lineWidth = 2
-    ctx.stroke()
-
-    ctx.fillStyle = '#334155'
-    ctx.font = 'bold 28px system-ui, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText('С', c, pad - 18)
-    ctx.fillText('Ю', c, S - pad + 18)
-    ctx.textAlign = 'left'
-    ctx.fillText('В', c + maxR + 18, c)
-    ctx.textAlign = 'right'
-    ctx.fillText('З', c - maxR - 18, c)
-    ctx.textBaseline = 'alphabetic'
-  }, [coverage, grid, radiusKm, activeMap])
-
-  return (
-    <canvas
-      ref={ref}
-      width={CANVAS_PX}
-      height={CANVAS_PX}
-      role="img"
-      aria-label="Круговая диаграмма радиосигнала с учётом рельефа"
-      className="w-full max-w-[560px] aspect-square rounded-lg border bg-background"
-    />
-  )
-}
 
 export function CoveragePanel() {
   const lastInput = useRadioStore((s) => s.lastInput)
@@ -465,21 +138,9 @@ export function CoveragePanel() {
         {data && cov && (
           <div className="space-y-2">
             <div className="flex justify-center">
-              <CoverageDiagram
-                coverage={cov}
-                grid={data.grid}
-                radiusKm={radiusKm}
-                center={lastInput.path.points[0]}
-                showMap={radiusChoice === null}
-              />
+              <CoverageDiagram coverage={cov} grid={data.grid} radiusKm={radiusKm} />
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground justify-center">
-              {radiusChoice === null && (
-                <span className="flex items-center gap-1.5">
-                  <span className="h-3 w-6 rounded-sm" style={{ background: 'linear-gradient(90deg,#3a4a3a,#7a8a6a)' }} />
-                  карта (спутник + населённые пункты)
-                </span>
-              )}
               <span className="flex items-center gap-1.5">
                 <span className="h-3 w-6 rounded-sm" style={{ background: 'rgba(16,185,129,0.35)', border: '1px solid #047857' }} />
                 зона связи (запас ≥ 0 дБ)
@@ -501,10 +162,7 @@ export function CoveragePanel() {
               Азимут 0° — север (С), по часовой стрелке. Центр — точка A (передатчик, Tx). Граница зоны — максимальная
               дальность с запасом на линию (link margin) ≥ 0 дБ по медианным потерям 50 % времени (та же цепочка
               механизмов, что в основном расчёте: {cov.engineUsed}). Построено за {cov.computedAtMs} мс ·
-              азимутов: {cov.radials.length} (шаг {cov.azimuthStepDeg}°).
-              {' '}Слои снизу вверх: гибридная карта (спутник + НП, Esri) — только для радиуса «длина трассы + 10 км»,
-              рельеф, зоны связи; для остальных радиусов — только рельеф. При недоступности тайлов диаграмма
-              строится на одном рельефе.
+              азимутов: {cov.radials.length} (шаг {cov.azimuthStepDeg}°). Слои: рельеф, зоны связи.
               {cov.stats.outsideTilesPercent !== undefined && cov.stats.outsideTilesPercent > 1 && (
                 <> Вне тайлов рельефа — {cov.stats.outsideTilesPercent} % точек круга (там высота принята 0 м, серая подложка).</>
               )}

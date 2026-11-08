@@ -98,4 +98,36 @@ test('поиск позиции A: чекбокс → радиус → блок 
   // Координаты СК-42 — ровно 7 цифр на координату
   await expect(page.getByText(/^\d{7}$/).first()).toBeVisible()
   await expect(page.getByText(/Перебор по кольцам/).first()).toBeVisible()
+
+  // Основная круговая диаграмма без слоя карты
+  await expect(page.getByText('карта (спутник + населённые пункты)')).toHaveCount(0)
+
+  // Если есть кандидаты: предпросмотр диаграммы при наведении + применение
+  const firstCandidate = page.getByText('Кандидат 1', { exact: true }).first()
+  const hasCandidates = await firstCandidate.isVisible().catch(() => false)
+  if (hasCandidates) {
+    // Пиктограмма круговой диаграммы: наведение — предпросмотр покрытия от позиции кандидата
+    const diagramBtn = page.getByRole('button', { name: 'Диаграмма позиции 1', exact: true })
+    await expect(diagramBtn).toBeVisible()
+    await diagramBtn.hover()
+    const preview = page.locator('canvas[aria-label="Круговая диаграмма радиосигнала с учётом рельефа"]').last()
+    await expect(preview).toBeVisible({ timeout: 30000 })
+
+    // «Применить»: точка A переносится в позицию кандидата 1, расчёт перезапускается
+    const candRow = page.getByRole('row', { name: /Кандидат 1(?!\d)/ })
+    const candText = (await candRow.textContent()) ?? ''
+    // ячейки текстом слипаются: «Кандидат 1» + X (7 цифр) + Y — якорим на метку
+    const candX = candText.match(/Кандидат 1\D*?(\d{7})/)?.[1]
+    expect(candX).toBeDefined()
+    await candRow.getByRole('button', { name: 'Применить позицию 1', exact: true }).click()
+    const newSummary = page.getByText(/Поиск позиции A: найдено \d+ оптимальных точек/).first()
+    await expect(newSummary).toBeVisible({ timeout: 60000 })
+    // После пересчёта блок схлопнут — раскрываем снова
+    await newSummary.click()
+    // Новая исходная точка A = прежний кандидат 1 (та же координата X)
+    const newRow = page.getByRole('row', { name: /Исходная точка A/ })
+    await expect(newRow).toBeVisible({ timeout: 30000 })
+    const newText = (await newRow.textContent()) ?? ''
+    expect(newText).toContain(candX!)
+  }
 })
