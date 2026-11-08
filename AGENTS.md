@@ -46,25 +46,42 @@ NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000/api bun run dev
 ## Верификация (регресс)
 
 ```bash
-bun test tests/          # 78 тестов TS-ядра — должны быть зелёными
+bun test tests/          # 107 тестов TS-ядра — должны быть зелёными
 bun run lint             # eslint — чисто
-cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q   # 30 тестов формул и API
+cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q   # 49 тестов формул и API
 ```
+
+E2E (стек уже запущен: сервис :8000 + фронт :3000):
+`PLAYWRIGHT_CHANNEL=msedge bunx playwright test` (11 сценариев).
 
 Контрольные значения на дефолтных вводных (Москва A→Б, 2400 МГц, P.2001, http):
 медианные потери **173.0 дБ**, P_rx **−132.7 дБм**, margin **−31.3 дБ**
 (линия не обеспечивается — это норма для NLOS на синтетическом DEM; P_rx и margin
 включают потери наведения 2×1.3 дБ по ширине луча 30° и номинальном отклонении 10°).
 
-## Состояние (2026-11-08)
+## Состояние (2026-11-08, актуализировано в `a0422b4`+)
 
 Ветка разработки — **`dev_`** (не main; main = исходный клон). Remote: `origin`,
-HEAD = `be44163`, рабочее дерево чистое, всё запушено, CI зелёный (lint/pytest/build/
-E2E + деплой-джоба внутри CI; прод — https://calc.drakonlab.ru). Тег `init_tag`
-стоит на `6b9ae47` (устарел относительно HEAD). Коммиты — conventional
-на русском, пушим в `dev_`.
+HEAD — см. git log (на момент актуализации `9ead9e4`), рабочее дерево чистое,
+всё запушено, CI зелёный (lint/pytest/build/E2E + деплой-джоба внутри CI;
+прод — https://calc.drakonlab.ru). Тег `init_tag` стоит на `6b9ae47`
+(устарел относительно HEAD). Коммиты — conventional на русском, пушим в `dev_`.
 
 Реализовано (сверху вниз):
+- `9ead9e4` — **роадмап 1.4**: шумовой порог P.372-17 (`src/lib/radio/noise.ts`):
+  селектор «Шумовое окружение» в приёмнике (дефолт «не учитывать» — бюджет не
+  меняется; фиты Table 1 валидны 0.3–250 МГц, выше зажим на 0 дБ), N = kTB +
+  10lg(f_rx + f_a − 1), python-зеркало в compute_budget
+- `60d5801` — **роадмап 1.2**: clearance-аудит (`src/lib/radio/clearance.ts`):
+  просвет 0.6·F1 при K = 4/3, 2/3, ∞, класс «лёгкая/тяжёлая трасса», доп. потери
+  подрефракции; блок в карточке профиля + бейдж на карте; python-зеркало в reports.py
+- `8a7ff7d` — **роадмап 1.1**: availability-отчёт P.530-19 (`src/lib/radio/availability.ts`):
+  недоступность ч/год (многолучёвость p₀·10^(−FM/10) + дождь с path reduction
+  factor d0 = 35·e^(−0.015·R0.01) и интерполяцией A(p)), цели 99.5/99.9/99.99 %;
+  карточка в результатах, строка в расходе бюджета, секция в JSON/CSV; R0.01 —
+  карты ITU → ввод → зона дождя (RAIN_ZONE_R001_MMH, P.837-3); python-зеркало
+  `reports.py` (отчёт клиентский для любого движка, формулы проверяются в обоих);
+  p0 вынесен из p2001lite в `multipathOccurrenceFactor`, rainLossDb получил opts.d0Km
 - `be44163` — data/srtm (локальный кэш тайлов) в .gitignore
 - `8c8ff2a` — ROADMAP.md: план развития (анализ предметной области, gap-анализ, этапы)
 - `00a60e3` — деплой-джоба внутри CI вместо workflow_run
@@ -156,6 +173,10 @@ E2E + деплой-джоба внутри CI; прод — https://calc.drakonl
 | `src/lib/radio/itu-grid.ts` | парсер/валидатор сеток ITU-R P.2001-6 (Table 3): 121×241, 161×321, 360×720, спецификации продуктов |
 | `src/lib/radio/itu-env.ts` | `ITU_PRODUCTS`, `ituEnvironmentAt()` — извлечение условий в точках трассы (билинейная интерполяция P.1144) |
 | `src/lib/radio/coverage.ts` + `src/components/radio/CoveragePanel.tsx` | круговая диаграмма зоны покрытия: граница связи по азимутам с учётом рельефа, канва с гипсометрией |
+| `src/lib/radio/availability.ts` | availability-отчёт P.530-19: недоступность ч/год, цели 99.5/99.9/99.99; R0.01 из карт/ввода/зоны дождя |
+| `src/lib/radio/clearance.ts` | clearance-аудит: 0.6·F1 при K = 4/3, 2/3, ∞, класс трассы light/heavy, доп. потери подрефракции |
+| `src/lib/radio/noise.ts` | P.372-17: фиты техногенного шума Table 1, `manMadeNoiseFaDb`, комбинация `systemNoisePowerDbm` |
+| `mini-services/radio-service/reports.py` | python-зеркало availability + clearance (эталонные формулы, pytest) |
 | `src/lib/radio/route.ts` | файл траектории: `parseRouteFile` (JSON → zod), сегментация с кэшем (WeakMap), `routeStateAt(route, t)` — позиция/высота/скорость/вертикальная скорость в момент t, `routeDurationS` |
 | `mini-services/radio-service/main.py` | FastAPI: `/api/calculate`, `/api/maps/*`, `/api/clutter`, `/api/history`, `/api/dem`; валидация карт (`_looks_like_numeric_grid`) |
 | `mini-services/radio-service/p2001_lite.py` | P.2001-lite + бюджет (python) |
