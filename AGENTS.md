@@ -46,9 +46,9 @@ NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000/api bun run dev
 ## Верификация (регресс)
 
 ```bash
-bun test tests/          # 72 теста TS-ядра — должны быть зелёными
+bun test tests/          # 78 тестов TS-ядра — должны быть зелёными
 bun run lint             # eslint — чисто
-cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q   # 25 тестов формул
+cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q   # 30 тестов формул и API
 ```
 
 Контрольные значения на дефолтных вводных (Москва A→Б, 2400 МГц, P.2001, http):
@@ -56,24 +56,32 @@ cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q
 (линия не обеспечивается — это норма для NLOS на синтетическом DEM; P_rx и margin
 включают потери наведения 2×1.3 дБ по ширине луча 30° и номинальном отклонении 10°).
 
-## Состояние (2026-11-07)
+## Состояние (2026-11-08)
 
 Ветка разработки — **`dev_`** (не main; main = исходный клон). Remote: `origin`,
-тег `init_tag` стоит на `6b9ae47` (устарел относительно HEAD). Коммиты — conventional
+HEAD = `be44163`, рабочее дерево чистое, всё запушено, CI зелёный (lint/pytest/build/
+E2E + деплой-джоба внутри CI; прод — https://calc.drakonlab.ru). Тег `init_tag`
+стоит на `6b9ae47` (устарел относительно HEAD). Коммиты — conventional
 на русском, пушим в `dev_`.
 
-**Не закоммичено**: загрузка траектории из файла на вкладке «Динамика» —
-`src/lib/radio/route.ts` (парсер `parseRouteFile` + `routeStateAt`/`routeDurationS` с
-кэшем сегментов), `routeFileSchema` в validation.ts (минимум 4 точки, любое
-расширение файла), маршрутная ветка в `simulateDynamics`/`trajectoryPoints`
-(doppler.ts, 4-й аргумент `route?`), store (`route`, `loadRoute`, `clearRoute`;
-`tripodHeight` файла → `txHeightM`), UI-блок в DynamicsPanel, полилиния+анимация по
-маршруту в MapPanel, тесты `tests/route.test.ts` + фикстура `tests/fixtures/route-sample.rt`
-(72 теста). Попутный фикс гонки fitBounds в MapPanel: оба fitBounds (трасса и
-траектория) — `animate: false`, иначе отложенная zoom-анимация трассы при
-перемонтировании вкладки перебивала вид на маршрут.
-
-Реализовано в этой сессии (сверху вниз):
+Реализовано (сверху вниз):
+- `be44163` — data/srtm (локальный кэш тайлов) в .gitignore
+- `8c8ff2a` — ROADMAP.md: план развития (анализ предметной области, gap-анализ, этапы)
+- `00a60e3` — деплой-джоба внутри CI вместо workflow_run
+- `9ce55bd` — httpx2 для fastapi TestClient в тестах API
+- `f0e55f1` — CI/CD «как Vercel»: сборка и E2E на GitHub, сервер только принимает образы
+- `6cdf763` — автоподкачка тайлов трассы с сервера в IndexedDB
+- `410bf0d` — раздача тайлов SRTM с сервера (GET /api/srtm)
+- `9dc9067` — загрузка траектории из файла на вкладке «Динамика»: `src/lib/radio/route.ts`
+  (парсер `parseRouteFile` + `routeStateAt`/`routeDurationS` с кэшем сегментов),
+  `routeFileSchema` в validation.ts (минимум 4 точки, любое расширение файла),
+  маршрутная ветка в `simulateDynamics`/`trajectoryPoints` (4-й аргумент `route?`),
+  store (`route`, `loadRoute`, `clearRoute`; `tripodHeight` файла → `txHeightM`),
+  UI-блок в DynamicsPanel, полилиния+анимация по маршруту в MapPanel, тесты
+  `tests/route.test.ts` + фикстура `tests/fixtures/route-sample.rt`. Попутный фикс
+  гонки fitBounds в MapPanel: оба fitBounds (трасса и траектория) — `animate: false`,
+  иначе отложенная zoom-анимация трассы при перемонтировании вкладки перебивала
+  вид на маршрут
 - `32fab51` — режим частоты подвижного (свой переключатель «одна частота / диапазон»,
   развёртка обратной линии до 12 точек с обменом оборудования, карточка развёртки
   в результатах); перенос функционала из `web_dev_z` (ручной merge): цифровые
