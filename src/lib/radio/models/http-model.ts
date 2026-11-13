@@ -28,11 +28,16 @@ export class HttpPropagationModel implements PropagationModel {
     } catch (e) {
    // Fallback
       const reason = e instanceof Error ? e.message : String(e)
-      const local = this.modelId === 'p2001' ? computeP2001Lite(input) : computeFsplP526(input)
+      // ITM реализован только в python-сервисе (роадмап 2.1, TS-порт отсутствует —
+      // задокументированный разрыв): при недоступности сервиса — P.2001-lite
+      const local = this.modelId === 'fspl-p526' ? computeFsplP526(input) : computeP2001Lite(input)
+      const localName = this.modelId === 'fspl-p526' ? 'FSPL + P.526' : 'P.2001-lite'
+      const itmNote = this.modelId === 'itm' ? 'ITM доступен только через Python-сервис — ' : ''
       return {
         ...local,
+        model: this.modelId,
         warnings: [
-          `Python-сервис недоступен (${reason}) — выполнен локальный расчёт${this.modelId === 'p2001' ? ' P.2001-lite' : ' FSPL + P.526'}.`,
+          `${itmNote}Python-сервис недоступен (${reason}) — выполнен локальный расчёт ${localName}.`,
           ...local.warnings,
         ],
       }
@@ -42,7 +47,7 @@ export class HttpPropagationModel implements PropagationModel {
   getCapabilities(): ModelCapabilities {
     return {
       model: this.modelId,
-      supportsTimePercent: this.modelId === 'p2001',
+      supportsTimePercent: this.modelId === 'p2001' || this.modelId === 'itm',
       supportsMaps: this.modelId === 'p2001',
       minFrequencyMhz: 30,
       maxFrequencyMhz: 50000,
@@ -50,7 +55,9 @@ export class HttpPropagationModel implements PropagationModel {
       description:
         this.modelId === 'p2001'
           ? 'ITU-R P.2001 через FastAPI-сервис (py2001 или P.2001-lite), поддержка карт ITU'
-          : 'FSPL + P.526 через FastAPI-сервис',
+          : this.modelId === 'itm'
+            ? 'Longley-Rice ITM v1.2.2 через FastAPI-сервис (порт NTIA/ITS); локальной реализации нет — при недоступности сервиса fallback на P.2001-lite'
+            : 'FSPL + P.526 через FastAPI-сервис',
     }
   }
 }

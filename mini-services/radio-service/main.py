@@ -204,6 +204,7 @@ def capabilities():
             "supportsMaps": p2001,
         },
         "fspl-p526": {"available": True, "engine": "py: FSPL + P.526 + P.838/P.676/P.833"},
+        "itm": {"available": True, "engine": "py: Longley-Rice ITM v1.2.2 (порт NTIA/ITS, роадмап 2.1)"},
     }
 
 
@@ -235,6 +236,13 @@ async def api_calculate(request: Request):
             result["warnings"].insert(0, f"py2001 недоступен: {e} — выполнен расчёт P.2001-lite")
     elif model == "p2001":
         result = p2001_calculate(inp, engine_note="py: P.2001-lite (статистическая аппроксимация)")
+    elif model == "itm":
+        # Longley-Rice ITM (роадмап 2.1): вендоренный порт NTIA/ITS v1.2.2
+        try:
+            from itm_model import itm_calculate
+            result = itm_calculate(inp, engine_note="py: Longley-Rice ITM v1.2.2 (медиана 50 % времени)")
+        except Exception as e:
+            raise HTTPException(400, f"ITM: не удалось выполнить расчёт ({e})")
     else:
         # FSPL + P.526: тот же движок, модель детерминированная
         result = p2001_calculate(inp, engine_note="py: FSPL (P.525) + P.526")

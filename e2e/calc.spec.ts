@@ -79,6 +79,21 @@ test('сравнение методов дифракции: раскрывающ
   await expect(page.getByText(/В расчёте: max\(Дейгаут, Буллингтон\)/).first()).toBeVisible()
 })
 
+test('модель ITM: выбор, расчёт, карточка сравнения с P.2001', async ({ page }) => {
+  await page.goto('/')
+  // Выбрать модель Longley-Rice ITM: Radix Select открывается кликом по триггеру
+  const modelSelect = page.getByText('Модель распространения').locator('..').getByRole('combobox')
+  await modelSelect.click()
+  await page.getByRole('option', { name: 'Longley-Rice ITM' }).click()
+  await page.getByRole('button', { name: 'Рассчитать', exact: true }).click()
+
+  // Бюджет с бейджем движка ITM
+  await expect(page.getByText(/Longley-Rice ITM/).first()).toBeVisible({ timeout: 30000 })
+  // Карточка сравнения с P.2001
+  await expect(page.getByText('Сравнение моделей: ITM vs P.2001').first()).toBeVisible({ timeout: 30000 })
+  await expect(page.getByText('Δ (ITM − P.2001)').first()).toBeVisible()
+})
+
 test('поиск позиции A: чекбокс → радиус → блок с СК-42 по 7 цифр', async ({ page }) => {
   await page.goto('/')
 

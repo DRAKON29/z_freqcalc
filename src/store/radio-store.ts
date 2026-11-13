@@ -23,6 +23,13 @@ import type {
 import { createModel, defaultBackend } from '@/lib/radio/models'
 import { computeLinkBudget } from '@/lib/radio/budget'
 import { availabilityExpenseRow, computeAvailabilityReport } from '@/lib/radio/availability'
+
+/** Сравнение ITM с P.2001-lite (роадмап 2.1): перекрёстный расчёт прямой линии. */
+export interface ModelComparison {
+  medianLossDb: number
+  linkMarginDb: number
+  engineUsed: string
+}
 import { buildProfile, createHgtDem, createSyntheticDem, makeClutterSampler, parseHgt, pathTileCoverage, type ClutterGeoJson, type HgtTile } from '@/lib/radio/terrain'
 import { distanceM, bearingDeg, wgs84ToSk42, sk42ToWgs84 } from '@/lib/radio/coordinates'
 import { getDeviceId, saveHistory, syncEntry, listItuMaps, getItuMap, deleteItuMap } from '@/lib/radio/history'
@@ -155,6 +162,8 @@ export interface RadioState {
   budget: LinkBudget | null
   /** Availability-отчёт P.530 для прямой линии */
   availability: AvailabilityReport | null
+  /** Сравнение с P.2001 (заполняется при выбранной модели ITM) */
+  comparison: ModelComparison | null
   /** Обратная линия: подвижный Tx → наземный Rx (одна частота) */
   reverseResult: PropagationResult | null
   reverseBudget: LinkBudget | null
@@ -257,6 +266,7 @@ export const useRadioStore = create<RadioState>((set, get) => ({
   result: null,
   budget: null,
   availability: null,
+  comparison: null,
   reverseResult: null,
   reverseBudget: null,
   reverseInput: null,
@@ -599,6 +609,24 @@ export const useRadioStore = create<RadioState>((set, get) => ({
         budget = { ...budget, expense: [...budget.expense, availabilityExpenseRow(fwdReport)] }
       }
 
+      // Сравнение моделей (роадмап 2.1): при выбранном ITM — перекрёстный расчёт
+      // прямой линии через P.2001 (http) для «второго мнения»
+      let comparison: ModelComparison | null = null
+      if (s.model === 'itm') {
+        try {
+          const p2001Model = createModel('http', 'p2001')
+          const p2001Prop = await p2001Model.calculate(lastInput)
+          const p2001Budget = computeLinkBudget(lastInput, s.equipment, p2001Prop)
+          comparison = {
+            medianLossDb: p2001Prop.medianLossDb,
+            linkMarginDb: p2001Budget.linkMarginDb,
+            engineUsed: p2001Prop.engineUsed,
+          }
+        } catch {
+          comparison = null // сравнение — не критичный путь
+        }
+      }
+
       // Обратная линия: по режиму частоты подвижного передатчика
       let reverseResult: PropagationResult | null = null
       let reverseBudget: LinkBudget | null = null
@@ -657,7 +685,7 @@ export const useRadioStore = create<RadioState>((set, get) => ({
             dem,
             clutterSampler,
             s.searchRadiusM,
-            s.model === 'fspl-p526' ? 'fspl-p526' : 'p2001',
+            s.model === 'fspl-p526' ? 'fspl-p526' : 'p2001', // ITM локально не считается — поиск через P.2001-lite
             (done, total) => set({ searchProgress: { done, total } }),
           )
         } catch {
@@ -669,6 +697,7 @@ export const useRadioStore = create<RadioState>((set, get) => ({
         result,
         budget,
         availability,
+        comparison,
         reverseResult,
         reverseBudget,
         reverseInput,
@@ -799,7 +828,7 @@ export const useRadioStore = create<RadioState>((set, get) => ({
     }
   },
 
-  resetResults: () => set({ result: null, budget: null, availability: null, reverseResult: null, reverseBudget: null, reverseInput: null, reverseAvailability: null, reverseRangeResults: null, rangeResults: null, searchReport: null, searchProgress: null, dynamics: null, dynamicsAll: [], dynamicsProgress: null, lastError: null }),
+  resetResults: () => set({ result: null, budget: null, availability: null, comparison: null, reverseResult: null, reverseBudget: null, reverseInput: null, reverseAvailability: null, reverseRangeResults: null, rangeResults: null, searchReport: null, searchProgress: null, dynamics: null, dynamicsAll: [], dynamicsProgress: null, lastError: null }),
 }))
 
 /** СК-42 для точки (для отображения в UI). */

@@ -13,7 +13,7 @@ import { destination, distanceM, bearingDeg, wgs84ToSk42 } from './coordinates'
 import { buildProfile, type DemSource } from './terrain'
 import { computeP2001Lite, computeFsplP526 } from './p2001lite'
 import { computeLinkBudget } from './budget'
-import type { CalculationInput, EquipmentParams } from './types'
+import type { CalculationInput, EquipmentParams, ModelId } from './types'
 
 /** Сэмплер clutter (высоты зданий/растительности в точке). */
 type ClutterSampler = (lat: number, lon: number) => { type: string; height: number } | null
@@ -31,8 +31,7 @@ export const SEARCH_RINGS: ReadonlyArray<{ fraction: number; azimuths: number }>
   { fraction: 1, azimuths: 24 },
 ]
 
-/** Результат оценки одной кандидатной позиции точки A. */
-export interface SearchPointResult {
+/** Результат оценки одной кандидатной позиции точки A. */export interface SearchPointResult {
   lat: number
   lon: number
   /** СК-42 Гаусс–Крюгер: X (норотирование), м */
@@ -88,7 +87,8 @@ export function fmtSk42SevenDigits(value: number): string {
 
 /**
  * Перебор кандидатных позиций точки A с полной оценкой линии.
- * Модель — локальная TS (p2001-lite или FSPL+P.526, по modelName).
+ * Модель — локальная TS (p2001-lite или FSPL+P.526, по modelName); ITM локальной
+ * реализации не имеет (роадмап 2.1) — оценивается P.2001-lite.
  */
 export async function searchOptimalPointA(
   baseInput: CalculationInput,
@@ -96,7 +96,7 @@ export async function searchOptimalPointA(
   dem: DemSource,
   clutterSampler: ClutterSampler | undefined,
   radiusM: number,
-  modelName: 'p2001' | 'fspl-p526',
+  modelName: ModelId,
   onProgress?: (done: number, total: number) => void,
 ): Promise<SearchReport> {
   const radius = Math.min(SEARCH_MAX_RADIUS_M, Math.max(SEARCH_MIN_RADIUS_M, radiusM))
@@ -118,7 +118,7 @@ export async function searchOptimalPointA(
         demSource: baseInput.path.demSource,
       },
     }
-    const prop = modelName === 'p2001' ? computeP2001Lite(input) : computeFsplP526(input)
+    const prop = modelName === 'fspl-p526' ? computeFsplP526(input) : computeP2001Lite(input)
     const budget = computeLinkBudget(input, equipment, prop)
     const sk = wgs84ToSk42(p)
     results.push({

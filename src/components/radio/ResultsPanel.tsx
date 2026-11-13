@@ -95,7 +95,7 @@ function rainSourceLabel(src: 'itu' | 'user' | 'zone' | null): string {
 
 export function ResultsPanel() {
   const s = useRadioStore()
-  const { result, budget, availability, lastInput, rangeResults, reverseResult, reverseBudget, reverseInput, reverseAvailability, reverseRangeResults, mobileFrequencyMhz, mobileFrequencyMode, terrainWarning, searchReport, searchProgress } = s
+  const { result, budget, availability, comparison, lastInput, rangeResults, reverseResult, reverseBudget, reverseInput, reverseAvailability, reverseRangeResults, mobileFrequencyMhz, mobileFrequencyMode, terrainWarning, searchReport, searchProgress } = s
 
   const profileData = useMemo(() => {
     if (!lastInput) return []
@@ -558,6 +558,51 @@ export function ResultsPanel() {
             </p>
           </div>
         </details>
+      )}
+
+      {/* Сравнение с P.2001 (роадмап 2.1): показывается при выбранной модели ITM */}
+      {result.model === 'itm' && comparison && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex flex-wrap items-center justify-between gap-2">
+              Сравнение моделей: ITM vs P.2001
+              <Badge variant="outline" className="font-mono text-[10px]">{comparison.engineUsed}</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Модель</TableHead>
+                  <TableHead className="text-right">Медианные потери, дБ</TableHead>
+                  <TableHead className="text-right">Запас на линию, дБ</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell>Longley-Rice ITM (выбрана)</TableCell>
+                  <TableCell className="text-right font-mono">{result.medianLossDb.toFixed(1)}</TableCell>
+                  <TableCell className={`text-right font-mono ${marginCls(budget.linkMarginDb)}`}>{budget.linkMarginDb.toFixed(1)}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell>ITU-R P.2001 (перекрёстный расчёт)</TableCell>
+                  <TableCell className="text-right font-mono">{comparison.medianLossDb.toFixed(1)}</TableCell>
+                  <TableCell className={`text-right font-mono ${marginCls(comparison.linkMarginDb)}`}>{comparison.linkMarginDb.toFixed(1)}</TableCell>
+                </TableRow>
+                <TableRow className="bg-muted/50 font-medium">
+                  <TableCell>Δ (ITM − P.2001)</TableCell>
+                  <TableCell className="text-right font-mono">{(result.medianLossDb - comparison.medianLossDb).toFixed(1)}</TableCell>
+                  <TableCell className="text-right font-mono">{(budget.linkMarginDb - comparison.linkMarginDb).toFixed(1)}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+            <p className="text-xs text-muted-foreground">
+              Независимые модели NLOS: расхождение до 5–10 дБ — норма для пересечённого рельефа (оценка
+              неопределённости); проектируйте запас по худшей оценке. P.2001 дополнительно учитывает
+              изменчивость во времени и климатические карты.
+            </p>
+          </CardContent>
+        </Card>
       )}
 
       {/* Обратная линия: подвижный Tx → наземный Rx */}

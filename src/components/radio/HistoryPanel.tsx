@@ -141,6 +141,7 @@ export function HistoryPanel() {
                   <SelectItem value="all">Все</SelectItem>
                   <SelectItem value="p2001">P.2001</SelectItem>
                   <SelectItem value="fspl-p526">FSPL + P.526</SelectItem>
+                  <SelectItem value="itm">Longley-Rice ITM</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -198,7 +199,7 @@ export function HistoryPanel() {
                   <TableRow key={`${e.id}-${e.createdAt}`}>
                     <TableCell className="text-xs">{new Date(e.createdAt).toLocaleString('ru-RU')}</TableCell>
                     <TableCell className="text-xs">{e.name}</TableCell>
-                    <TableCell className="text-xs">{e.model === 'p2001' ? 'P.2001' : 'FSPL+P.526'}</TableCell>
+                    <TableCell className="text-xs">{e.model === 'p2001' ? 'P.2001' : e.model === 'itm' ? 'ITM' : 'FSPL+P.526'}</TableCell>
                     <TableCell className="text-right text-xs font-mono">{e.frequencyMhz} МГц</TableCell>
                     <TableCell className="text-right text-xs font-mono">{e.distanceKm.toFixed(1)} км</TableCell>
                     <TableCell className="text-right text-xs font-mono">{e.medianLossDb.toFixed(1)} дБ</TableCell>

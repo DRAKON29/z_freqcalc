@@ -55,7 +55,7 @@ export default function Home() {
             <div>
               <h1 className="text-lg font-semibold leading-tight">Калькулятор распространения радиоволн</h1>
               <p className="text-xs text-muted-foreground">
-                500–7000 МГц · ITU-R P.2001 / FSPL + P.526 · PWA
+                500–7000 МГц · ITU-R P.2001 / FSPL + P.526 / Longley-Rice ITM · PWA
               </p>
             </div>
           </div>

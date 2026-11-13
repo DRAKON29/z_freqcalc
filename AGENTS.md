@@ -48,11 +48,11 @@ NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000/api bun run dev
 ```bash
 bun test tests/          # 127 тестов TS-ядра — должны быть зелёными
 bun run lint             # eslint — чисто
-cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q   # 53 теста формул и API
+cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q   # 61 тест формул и API
 ```
 
 E2E (стек уже запущен: сервис :8000 + фронт :3000):
-`PLAYWRIGHT_CHANNEL=msedge bunx playwright test` (14 сценариев).
+`PLAYWRIGHT_CHANNEL=msedge bunx playwright test` (15 сценариев).
 
 Контрольные значения на дефолтных вводных (Москва A→Б, 2400 МГц, P.2001, http):
 медианные потери **173.0 дБ**, P_rx **−132.7 дБм**, margin **−31.3 дБ**
@@ -68,7 +68,17 @@ HEAD — см. git log (на момент актуализации `9ead9e4`), �
 (устарел относительно HEAD). Коммиты — conventional на русском, пушим в `dev_`.
 
 Реализовано (сверху вниз):
-- (этот коммит) **роадмап 2.2 — UAV-динамика**: рельеф per-sample в simulateDynamics
+- (этот коммит) **роадмап 2.1 — Longley-Rice ITM ('itm')**: вендоренный порт ITM
+  v1.2.2 (AB3AP, public domain NTIA/ITS) в itm_port.py + адаптер itm_model.py
+  (climate=5, N0=301, epsR/sigma из input, zT=Φ⁻¹(p/100)); dispatch elif model=="itm"
+  в /api/calculate (ранее неизвестные модели молча попадали в fspl-p526!) +
+  capabilities; ModelId + 'itm' в TS с явным fallback на P.2001-lite
+  (http-fallback/wasm) и предупреждением; селектор в EquipmentPanel, фильтр и
+  метка в HistoryPanel, optimal-point: itm→P.2001-lite; стор: comparison
+  (ModelComparison) — перекрёстный расчёт P.2001 при выбранном ITM; карточка
+  «Сравнение моделей: ITM vs P.2001» в ResultsPanel; requirements.txt +numpy==2.5.4;
+  TS-gap задокументирован (README); pytest test_itm.py (8, эталоны на синтетике)
+- `57ed2ff` **роадмап 2.2 — UAV-динамика**: рельеф per-sample в simulateDynamics
   (медианная цепочка через medianMechanismsLossDb — единый источник с computeFsplP526;
   FSPL по наклонной дальности, профиль дифракции по земле; растительность исключена);
   ДН по углу места (ошибка = |el(t) − initialElevationDeg|, поле добавлено в UI;
@@ -204,6 +214,7 @@ HEAD — см. git log (на момент актуализации `9ead9e4`), �
 | `src/lib/radio/clearance.ts` | clearance-аудит: 0.6·F1 при K = 4/3, 2/3, ∞, класс трассы light/heavy, доп. потери подрефракции |
 | `src/lib/radio/noise.ts` | P.372-17: фиты техногенного шума Table 1, `manMadeNoiseFaDb`, комбинация `systemNoisePowerDbm` |
 | `mini-services/radio-service/reports.py` | python-зеркало availability + clearance (эталонные формулы, pytest) |
+| `mini-services/radio-service/itm_port.py` + `itm_model.py` | вендоренный ITM v1.2.2 + адаптер модели 'itm' (pytest test_itm.py) |
 | `src/lib/radio/route.ts` | файл траектории: `parseRouteFile` (JSON → zod), сегментация с кэшем (WeakMap), `routeStateAt(route, t)` — позиция/высота/скорость/вертикальная скорость в момент t, `routeDurationS` |
 | `mini-services/radio-service/main.py` | FastAPI: `/api/calculate`, `/api/maps/*`, `/api/clutter`, `/api/history`, `/api/dem`; валидация карт (`_looks_like_numeric_grid`) |
 | `mini-services/radio-service/p2001_lite.py` | P.2001-lite + бюджет (python) |

@@ -16,7 +16,7 @@ import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { MODULATIONS } from '@/lib/radio/constants'
 import { manMadeNoiseFaDb, NOISE_ENVIRONMENT_LABELS } from '@/lib/radio/noise'
-import type { AntennaParams, ModulationId, NoiseEnvironment } from '@/lib/radio/types'
+import type { AntennaParams, ModulationId, ModelId, NoiseEnvironment } from '@/lib/radio/types'
 import { SlidersHorizontal, RadioTower, Plane } from 'lucide-react'
 
 type PowerUnit = 'dbm' | 'mw'
@@ -311,13 +311,14 @@ export function EquipmentPanel() {
           <div className="grid gap-3 sm:grid-cols-3">
             <div>
               <Label className="text-xs">Модель распространения</Label>
-              <Select value={model} onValueChange={(v) => setField('model', v as 'p2001' | 'fspl-p526')}>
+              <Select value={model} onValueChange={(v) => setField('model', v as ModelId)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="p2001">ITU-R P.2001</SelectItem>
                   <SelectItem value="fspl-p526">FSPL + P.526</SelectItem>
+                  <SelectItem value="itm">Longley-Rice ITM</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -341,6 +342,8 @@ export function EquipmentPanel() {
           </div>
           <p className="text-xs text-muted-foreground">
             P.2001: дифракция, тропосферное рассеяние, замирания 0–100% времени, климатические зоны.
+            ITM (Longley-Rice): независимая модель NLOS по неровному рельефу, доступна только через http-бэкенд —
+            при его недоступности (и в wasm) выполнится локальный расчёт P.2001-lite с предупреждением.
             В wasm-режиме P.2001 выполняется в браузере (Pyodide), при его недоступности — fallback на FSPL + P.526
             (потери в свободном пространстве + коррекция дифракции) с предупреждением.
           </p>

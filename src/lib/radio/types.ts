@@ -6,7 +6,7 @@ export type Polarization = 'vertical' | 'horizontal' | 'circular'
 
 export type ModulationId = 'BPSK' | 'QPSK' | '16QAM' | '64QAM'
 
-export type ModelId = 'p2001' | 'fspl-p526'
+export type ModelId = 'p2001' | 'fspl-p526' | 'itm'
 
 export type BackendId = 'http' | 'wasm'
 

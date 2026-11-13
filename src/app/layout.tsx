@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Калькулятор распространения радиоволн",
   description:
-    "Инженерный расчёт распространения радиоволн 500–7000 МГц: ITU-R P.2001, FSPL + P.526, рельеф, бюджет линии, доплер, PWA.",
+    "Инженерный расчёт распространения радиоволн 500–7000 МГц: ITU-R P.2001, FSPL + P.526, Longley-Rice ITM, рельеф, бюджет линии, доплер, PWA.",
   manifest: "/manifest.webmanifest",
   applicationName: "Радиокалькулятор",
   appleWebApp: {
