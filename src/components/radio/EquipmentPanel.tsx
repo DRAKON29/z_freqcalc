@@ -152,7 +152,7 @@ function StationCard({
           <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
             Передатчик
             <Badge variant="outline" className="text-[10px] font-normal">
-              {isGround ? 'прямая линия' : 'обратная линия'}
+              {isGround ? 'передаёт: прямая линия (наземный Tx → подвижный Rx)' : 'передаёт: обратная линия (подвижный Tx → наземный Rx)'}
             </Badge>
           </p>
           {/* Переключатель единиц мощности (общий для обеих карточек) */}
@@ -195,7 +195,7 @@ function StationCard({
         <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
           Приёмник
           <Badge variant="outline" className="text-[10px] font-normal">
-            {isGround ? 'обратная линия' : 'прямая линия'}
+            {isGround ? 'принимает: обратная линия (подвижный Tx → наземный Rx)' : 'принимает: прямая линия (наземный Tx → подвижный Rx)'}
           </Badge>
         </p>
         <div className="grid grid-cols-2 gap-2">
