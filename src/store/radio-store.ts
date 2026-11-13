@@ -5,6 +5,7 @@
 
 import { create } from 'zustand'
 import type {
+  AntennaParams,
   AtmosphereParams,
   AvailabilityReport,
   BackendId,
@@ -19,10 +20,14 @@ import type {
   PropagationResult,
   RangeFreqResult,
   RouteData,
+  TransceiverParams,
 } from '@/lib/radio/types'
 import { createModel, defaultBackend } from '@/lib/radio/models'
 import { computeLinkBudget } from '@/lib/radio/budget'
 import { availabilityExpenseRow, computeAvailabilityReport } from '@/lib/radio/availability'
+import type { CoverageMode } from '@/lib/radio/coverage'
+import type { ShareState } from '@/lib/radio/share'
+import { loadPresets, makePreset, mergePresets, replacePresets, savePresets, type EquipmentPreset } from '@/lib/radio/presets'
 
 /** Сравнение ITM с P.2001-lite (роадмап 2.1): перекрёстный расчёт прямой линии. */
 export interface ModelComparison {
@@ -145,6 +150,12 @@ export interface RadioState {
   backend: BackendId
   backendAvailable: boolean | null
 
+  /** Режим преград кругового покрытия (этап UX.3): модель / FSPL / геометрия / Френель */
+  coverageMode: CoverageMode
+
+  // Пользовательские пресеты оборудования (этап UX.2, localStorage)
+  presets: EquipmentPreset[]
+
   // Рельеф
   hgtTiles: HgtTile[]
   clutter: ClutterGeoJson | null
@@ -206,6 +217,14 @@ export interface RadioState {
   setPointB: (p: LatLon) => void
   setField: <K extends keyof RadioState>(key: K, value: RadioState[K]) => void
   setEquipment: (eq: Partial<EquipmentParams>) => void
+  /** Применение share-ссылки (этап UX.1): присутствующие поля перезаписывают ввод. */
+  applyShareState: (share: ShareState) => void
+  /** Сохранить текущие параметры станции как пресет (этап UX.2). */
+  savePreset: (name: string, station: 'ground' | 'mobile', antenna: AntennaParams, radio: TransceiverParams) => EquipmentPreset
+  /** Удалить пользовательский пресет. */
+  deletePreset: (id: string) => void
+  /** Импорт пресетов: merge — добавить к существующим, replace — переписать список. */
+  importPresets: (list: EquipmentPreset[], mode: 'merge' | 'replace') => { added: number; skipped: number }
   setAtmosphere: (a: Partial<AtmosphereParams>) => void
   setDynamicsParams: (p: Partial<DynamicParams>) => void
   setBackend: (b: BackendId) => void
@@ -253,6 +272,10 @@ export const useRadioStore = create<RadioState>((set, get) => ({
   model: 'p2001',
   backend: defaultBackend(),
   backendAvailable: null,
+
+  coverageMode: 'model',
+
+  presets: loadPresets(),
 
   hgtTiles: [],
   clutter: null,
@@ -304,6 +327,56 @@ export const useRadioStore = create<RadioState>((set, get) => ({
   setPointB: (p) => set({ pointB: p }),
   setField: (key, value) => set({ [key]: value } as Partial<RadioState>),
   setEquipment: (eq) => set((s) => ({ equipment: { ...s.equipment, ...eq } })),
+
+  /** Share-ссылка (этап UX.1): присутствующие в hash поля перезаписывают ввод;
+   *  результаты и поиск позиции сбрасываются — вход изменился. */
+  applyShareState: (share) => {
+    const patch: Partial<RadioState> = {}
+    if (share.pointA) patch.pointA = share.pointA
+    if (share.pointB) patch.pointB = share.pointB
+    if (share.frequencyMhz !== undefined) patch.frequencyMhz = share.frequencyMhz
+    if (share.frequencyMode) patch.frequencyMode = share.frequencyMode
+    if (share.freqFromMhz !== undefined) patch.freqFromMhz = share.freqFromMhz
+    if (share.freqToMhz !== undefined) patch.freqToMhz = share.freqToMhz
+    if (share.mobileFrequencyMhz !== undefined) patch.mobileFrequencyMhz = share.mobileFrequencyMhz
+    if (share.mobileFrequencyMode) patch.mobileFrequencyMode = share.mobileFrequencyMode
+    if (share.mobileFreqFromMhz !== undefined) patch.mobileFreqFromMhz = share.mobileFreqFromMhz
+    if (share.mobileFreqToMhz !== undefined) patch.mobileFreqToMhz = share.mobileFreqToMhz
+    if (share.polarization) patch.polarization = share.polarization
+    if (share.txHeightM !== undefined) patch.txHeightM = share.txHeightM
+    if (share.rxHeightM !== undefined) patch.rxHeightM = share.rxHeightM
+    if (share.kFactor !== undefined) patch.kFactor = share.kFactor
+    if (share.climateZone) patch.climateZone = share.climateZone
+    if (share.atmosphere) patch.atmosphere = { ...get().atmosphere, ...share.atmosphere }
+    if (share.equipment) patch.equipment = share.equipment
+    if (share.model) patch.model = share.model
+    if (Object.keys(patch).length > 0) {
+      get().resetResults()
+      set(patch)
+    }
+  },
+
+  savePreset: (name, station, antenna, radio) => {
+    const preset = makePreset(name, station, antenna, radio)
+    const list = [...get().presets, preset]
+    savePresets(list)
+    set({ presets: list })
+    return preset
+  },
+
+  deletePreset: (id) => {
+    const list = get().presets.filter((p) => p.id !== id)
+    savePresets(list)
+    set({ presets: list })
+  },
+
+  importPresets: (list, mode) => {
+    const res = mode === 'replace' ? replacePresets(list) : mergePresets(get().presets, list)
+    savePresets(res.list)
+    set({ presets: res.list })
+    return { added: res.added, skipped: res.skipped }
+  },
+
   setAtmosphere: (a) => set((s) => ({ atmosphere: { ...s.atmosphere, ...a } })),
   setDynamicsParams: (p) => set((s) => ({ dynamicsParams: { ...s.dynamicsParams, ...p } })),
   setBackend: (b) => set({ backend: b }),

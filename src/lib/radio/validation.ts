@@ -11,6 +11,39 @@ export const latLonSchema = z.object({
   lon: z.number().min(-180, 'Долгота от −180°').max(180, 'Долгота до 180°'),
 })
 
+/** Параметры антенны (подробные поля — optional, как в AntennaParams). */
+export const antennaParamsSchema = z.object({
+  gainDbi: z.number().min(-10, 'Усиление от −10 дБи').max(80, 'Усиление до 80 дБи'),
+  beamwidthDeg: z.number().min(1).max(360).optional(),
+  sidelobeDb: z.number().min(-80).max(0).optional(),
+  polarization: z.enum(['vertical', 'horizontal', 'circular']),
+  mismatchLossDb: z.number().min(0).max(20).optional(),
+  vswr: z.number().min(1).max(20).optional(),
+  feederLossDb: z.number().min(0).max(30).optional(),
+  azimuthDeg: z.number().min(0).max(360).optional(),
+  elevationDeg: z.number().min(-90).max(90).optional(),
+})
+
+/** Параметры приёмопередатчика (подробные поля — optional). */
+export const transceiverParamsSchema = z.object({
+  powerDbm: z.number().min(-30, 'Мощность от −30 дБм').max(60, 'Мощность до 60 дБм'),
+  sensitivityDbm: z.number().min(-160, 'Чувствительность от −160 дБм').max(0, 'Чувствительность до 0 дБм'),
+  noiseBandwidthHz: z.number().positive().optional(),
+  noiseFigureDb: z.number().min(0).max(30).optional(),
+  modulation: z.enum(['BPSK', 'QPSK', '16QAM', '64QAM']).optional(),
+  requiredEbN0Db: z.number().min(0).max(40).optional(),
+})
+
+/** Полное оборудование (EquipmentParams) — для share-ссылки и пресетов. */
+export const equipmentParamsSchema = z.object({
+  mode: z.enum(['simple', 'detailed']),
+  noiseEnvironment: z.enum(['none', 'quiet-rural', 'rural', 'residential', 'business']).optional(),
+  tx: antennaParamsSchema,
+  rx: antennaParamsSchema,
+  transmitter: transceiverParamsSchema,
+  receiver: transceiverParamsSchema,
+})
+
 export const profilePointSchema = z.object({
   d: z.number().min(0).max(1e7),
   elev: z.number().min(-500).max(9000),

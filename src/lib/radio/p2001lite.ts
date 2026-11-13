@@ -48,9 +48,20 @@ export function multipathOccurrenceFactor(climateZone: string, distanceKm: numbe
   return cf * zMult * Math.pow(distanceKm / 50, 3) * 0.05 // %
 }
 
+/** Опции точечного расчёта «FSPL + P.526» (этап UX.3): пропуск дифракции. */
+export interface FsplP526Options {
+  /**
+   * Пропустить дифракцию P.526 (включая здания/clutter) — режим «только FSPL»
+   * карты покрытия: максимально оптимистичная оценка. Тропосферное рассеяние
+   * за радиогоризонтом сохраняется (часть медианной цепочки).
+   */
+  skipDiffraction?: boolean
+}
+
 /** Медианные потери: FSPL + дифракция + тропосферное рассеяние за горизонтом. */
 export function medianLossFsplP526(
   input: CalculationInput,
+  opts?: FsplP526Options,
 ): { lossDb: number; fspl: number; diffraction: number; scatter: number } {
   const freq = input.frequencyMhz
   const d = input.path.distanceM
@@ -64,13 +75,15 @@ export function medianLossFsplP526(
   const kEff = input.environment?.k50 ?? input.kFactor
 
   const fspl = fsplDb(d, freq)
-  const diffraction = diffractionLossDb(
-    profile.map((p) => ({ d: p.d, elev: p.elev })),
-    txH,
-    rxH,
-    freq,
-    kEff,
-  )
+  const diffraction = opts?.skipDiffraction
+    ? 0
+    : diffractionLossDb(
+        profile.map((p) => ({ d: p.d, elev: p.elev })),
+        txH,
+        rxH,
+        freq,
+        kEff,
+      )
 
   // Тропосферное рассеяние — упрощённая аппроксимация P.2001 за радиогоризонтом
   const horizonKm = radioHorizonKm(txH, rxH, kEff)
@@ -146,14 +159,19 @@ export function clutterLosses(
  * (per-sample, роадмап 2.2). Без дождя (механизм процентного времени)
  * и предупреждений.
  */
-export function medianMechanismsLossDb(input: CalculationInput): { lossDb: number; breakdown: MechanismBreakdown } {
+export function medianMechanismsLossDb(
+  input: CalculationInput,
+  opts?: FsplP526Options,
+): { lossDb: number; breakdown: MechanismBreakdown } {
   const freq = input.frequencyMhz
-  const { lossDb, fspl, diffraction, scatter } = medianLossFsplP526(input)
-  const cl = clutterLosses(input)
+  const { lossDb, fspl, diffraction, scatter } = medianLossFsplP526(input, opts)
+  const cl = opts?.skipDiffraction
+    ? { diffractionDb: 0, vegetationDb: 0, hasBuilding: false, hasVegetation: false }
+    : clutterLosses(input)
   const env = input.environment
 
   let gasesDb = 0
-  if (input.atmosphere.gases) {
+  if (input.atmosphere.gases && !opts?.skipDiffraction) {
     // ρ из карты Surfwv_50_fixed (P.836-4), давление — ручное/стандартное
     gasesDb = Math.max(0, gasesLossDb(input.path.distanceM, freq, 5, {
       waterVaporGM3: env?.rho50,
@@ -175,10 +193,10 @@ export function medianMechanismsLossDb(input: CalculationInput): { lossDb: numbe
 }
 
 /** Полный расчёт «FSPL + P.526». */
-export function computeFsplP526(input: CalculationInput): PropagationResult {
+export function computeFsplP526(input: CalculationInput, opts?: FsplP526Options): PropagationResult {
   const warnings: string[] = []
   const freq = input.frequencyMhz
-  const { lossDb, breakdown } = medianMechanismsLossDb(input)
+  const { lossDb, breakdown } = medianMechanismsLossDb(input, opts)
   const env = input.environment
 
   let rainDb = 0

@@ -17,6 +17,7 @@ import { auditClearance } from '@/lib/radio/clearance'
 import { FPS_THRESHOLD } from '@/lib/radio/constants'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Maximize2, Minimize2 } from 'lucide-react'
 
 type MapStyle = 'scheme' | 'satellite' | 'hybrid'
 
@@ -57,6 +58,7 @@ export function MapPanel() {
   const [clickMode, setClickMode] = useState<'A' | 'Б'>('Б')
   const [mapStyle, setMapStyle] = useState<MapStyle>('scheme')
   const [showTiles, setShowTiles] = useState(true)
+  const [fullscreen, setFullscreen] = useState(false)
   const [L, setL] = useState<typeof LType | null>(null)
 
   const pointA = useRadioStore((s) => s.pointA)
@@ -110,6 +112,22 @@ export function MapPanel() {
   const clickModeRef = useRef(clickMode)
   clickModeRef.current = clickMode
 
+  // Полноэкранный режим карты (этап UX.5): CSS fixed-контейнер (не Fullscreen API —
+  // надёжнее в PWA); после смены размера Leaflet пересчитывает тайлы, Escape закрывает
+  useEffect(() => {
+    if (!fullscreen) return
+    const map = mapRef.current
+    const t = setTimeout(() => map?.invalidateSize(), 60)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullscreen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      clearTimeout(t)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [fullscreen])
+
   // Переключение типа карты (схема / спутник / гибрид)
   useEffect(() => {
     const leaflet = LRef.current
@@ -147,7 +165,10 @@ export function MapPanel() {
     }
   }, [hgtTiles, showTiles, L])
 
-  // Точки и трасса
+  // Точки и трасса. Маркеры — персистентные инстансы (этап UX.4): создаются
+  // один раз с dragend → setPointA/setPointB, при изменении точек переносится
+  // только позиция (setLatLng), а не пересоздание. Автопересчёта при переносе
+  // нет — расчёт по кнопке «Рассчитать» (конвенция проекта).
   useEffect(() => {
     const leaflet = LRef.current
     const map = mapRef.current
@@ -161,21 +182,45 @@ export function MapPanel() {
         iconAnchor: [14, 14],
       })
 
-    markerARef.current?.remove()
-    markerBRef.current?.remove()
-    markerARef.current = leaflet.marker([pointA.lat, pointA.lon], { icon: icon('#059669', 'A') }).addTo(map)
-    markerBRef.current = leaflet.marker([pointB.lat, pointB.lon], { icon: icon('#d97706', 'Б') }).addTo(map)
+    if (!markerARef.current) {
+      markerARef.current = leaflet
+        .marker([pointA.lat, pointA.lon], { icon: icon('#059669', 'A'), draggable: true, autoPan: true })
+        .addTo(map)
+      markerARef.current.on('dragend', () => {
+        const ll = markerARef.current!.getLatLng()
+        setPointA({ lat: ll.lat, lon: ll.lng })
+      })
+    } else {
+      markerARef.current.setLatLng([pointA.lat, pointA.lon])
+    }
+    if (!markerBRef.current) {
+      markerBRef.current = leaflet
+        .marker([pointB.lat, pointB.lon], { icon: icon('#d97706', 'Б'), draggable: true, autoPan: true })
+        .addTo(map)
+      markerBRef.current.on('dragend', () => {
+        const ll = markerBRef.current!.getLatLng()
+        setPointB({ lat: ll.lat, lon: ll.lng })
+      })
+    } else {
+      markerBRef.current.setLatLng([pointB.lat, pointB.lon])
+    }
 
-    lineRef.current?.remove()
-    lineRef.current = leaflet
-      .polyline(
-        [
-          [pointA.lat, pointA.lon],
-          [pointB.lat, pointB.lon],
-        ],
-        { color: '#0f766e', weight: 3, dashArray: '8 6' },
-      )
-      .addTo(map)
+    if (!lineRef.current) {
+      lineRef.current = leaflet
+        .polyline(
+          [
+            [pointA.lat, pointA.lon],
+            [pointB.lat, pointB.lon],
+          ],
+          { color: '#0f766e', weight: 3, dashArray: '8 6' },
+        )
+        .addTo(map)
+    } else {
+      lineRef.current.setLatLngs([
+        [pointA.lat, pointA.lon],
+        [pointB.lat, pointB.lon],
+      ])
+    }
 
     // Обе точки всегда в кадре при изменении трассы (загрузка из истории,
     // ввод координат, клик по карте). Зум карты не фиксируется: maxZoom
@@ -183,7 +228,7 @@ export function MapPanel() {
     // animate: false — иначе отложенная zoom-анимация перебивает последующий
     // fitBounds траектории (эффект ниже) при перемонтировании вкладки.
     map.fitBounds(lineRef.current.getBounds(), { padding: [50, 50], maxZoom: 15, animate: false })
-  }, [pointA, pointB, L])
+  }, [pointA, pointB, L, setPointA, setPointB])
 
   // Зона связи
   useEffect(() => {
@@ -361,11 +406,28 @@ export function MapPanel() {
             Анимация отключена: FPS {fpsMeasured ?? '<24'} &lt; {FPS_THRESHOLD} — используйте графики
           </Badge>
         )}
+        <Button
+          size="sm"
+          variant={fullscreen ? 'default' : 'outline'}
+          onClick={() => setFullscreen((v) => !v)}
+          title={fullscreen ? 'Свернуть карту (Esc)' : 'Развернуть карту на весь экран'}
+        >
+          {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          {fullscreen ? 'Свернуть' : 'Во весь экран'}
+        </Button>
       </div>
-      <div ref={mapDivRef} className="h-[380px] w-full rounded-lg border z-0" />
+      <div
+        ref={mapDivRef}
+        className={
+          fullscreen
+            ? 'fixed inset-0 z-[1000] h-full w-full rounded-none border-0 bg-background'
+            : 'h-[380px] w-full rounded-lg border z-0'
+        }
+      />
       <p className="text-xs text-muted-foreground">
-        Клик по карте ставит выбранную точку. Зона связи показывается после расчёта, траектория — после расчёта
-        динамики, границы загруженных тайлов рельефа — бирюзовым пунктиром.
+        Клик по карте ставит выбранную точку, маркеры A и Б можно перетаскивать (позиция переносится в форму).
+        Зона связи показывается после расчёта, траектория — после расчёта динамики, границы загруженных тайлов
+        рельефа — бирюзовым пунктиром.
       </p>
     </div>
   )

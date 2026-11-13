@@ -12,6 +12,8 @@ import { computeFsplP526 } from './p2001lite'
 import { computeLinkBudget } from './budget'
 import { destination } from './coordinates'
 import { buildProfile, pointInTiles, type DemSource } from './terrain'
+import { fresnelRadiusM } from './fresnel'
+import { earthBulgeM } from './fspl'
 import type { CalculationInput, EquipmentParams, ProfilePoint } from './types'
 import type { HgtTile } from './terrain'
 
@@ -23,6 +25,21 @@ export const RADIUS_MAX_KM = 200
 export const AUTO_EXTRA_KM = 10
 /** Порог зоны уверенного приёма, дБ */
 export const STRONG_MARGIN_DB = 10
+/** Критерий просвета «строго по Френелю»: доля первой зоны (этап UX.3). */
+export const FRESNEL_CRITERION = 0.6
+/** Критерий «уверенного приёма» в режиме Френеля: полный просвет F1. */
+export const FRESNEL_STRONG = 1.0
+
+/**
+ * Режим преград кругового покрытия (этап UX.3, референс antenna.2tg.dev):
+ *  • model    — полная цепочка механизмов основного расчёта (FSPL + P.526 + clutter);
+ *  • fspl     — только FSPL, без рельефа и препятствий (оптимистичная);
+ *  • geometry — жёсткая геометрия: рельеф/препятствия выше прямой видимости
+ *               (с учётом кривизны Земли) обрывают зону (худший случай);
+ *  • fresnel  — инженерный критерий: зона там, где просвет ≥ 0.6·F1
+ *               (уверенный приём — полный просвет F1).
+ */
+export type CoverageMode = 'model' | 'fspl' | 'geometry' | 'fresnel'
 
 export interface RadiusOption {
   /** Значение радиуса, км */
@@ -115,6 +132,8 @@ export interface ComputeCoverageParams {
   azimuthStepDeg?: number
   /** Тайлы рельефа — для оценки покрытия круга данными */
   hgtTiles?: HgtTile[]
+  /** Режим преград (этап UX.3): по умолчанию 'model' — как в основном расчёте */
+  mode?: CoverageMode
 }
 
 /**
@@ -156,9 +175,38 @@ export function sliceProfile(profile: ProfilePoint[], dM: number, maxPoints: num
 }
 
 /**
+ * Худший по профилю среза (до дальности dM) критерий «просвет/F1»: прямая
+ * видимость с учётом кривизны Земли против радиуса F1 в каждой промежуточной
+ * точке. Используется режимами geometry/fresnel (этап UX.3).
+ */
+function worstClearanceRatio(
+  profile: ProfilePoint[],
+  dM: number,
+  txHeightM: number,
+  rxHeightM: number,
+  kFactor: number,
+  freqMhz: number,
+): number {
+  const txBase = profile[0]?.elev ?? 0
+  const rxBase = profile[profile.length - 1]?.elev ?? 0
+  const txH = txBase + txHeightM
+  const rxH = rxBase + rxHeightM
+  let worst = Infinity
+  for (const p of profile) {
+    if (p.d <= 0 || p.d >= dM) continue // концы — точки антенн
+    const los = txH + ((rxH - txH) * p.d) / dM
+    const clearance = los - earthBulgeM(p.d, dM, kFactor) - p.total
+    const f1 = fresnelRadiusM(p.d, dM, freqMhz)
+    const ratio = f1 > 0 ? clearance / f1 : Infinity
+    if (ratio < worst) worst = ratio
+  }
+  return worst
+}
+
+/**
  * Расчёт круговой диаграммы: для каждого азимута — максимальная дальность,
- * на которой бюджет линии обеспечен (запас ≥ 0 дБ), с учётом рельефа
- * и препятствий (clutter) вдоль луча.
+ * на которой линия обеспечена (по режиму преград: запас ≥ 0 дБ / LOS /
+ * просвет 0.6·F1), с учётом рельефа и препятствий вдоль луча.
  */
 export function computeCoverage({
   input,
@@ -168,12 +216,19 @@ export function computeCoverage({
   radiusKm,
   azimuthStepDeg = 5,
   hgtTiles,
+  mode = 'model',
 }: ComputeCoverageParams): CoverageResult {
   const t0 = Date.now()
   const radius = isFinite(radiusKm) && radiusKm > 0 ? radiusKm : 15
   const radiusM = radius * 1000
   const center = input.path.points[0]
   const step = azimuthStepDeg > 0 && azimuthStepDeg <= 30 ? azimuthStepDeg : 5
+
+  // Геометрические режимы: классификация по просвету, не по бюджету;
+  // зона — непрерывный от центра участок до первого «блока» по критерию
+  const geometric = mode === 'geometry' || mode === 'fresnel'
+  const geometricThreshold = mode === 'geometry' ? 0 : FRESNEL_CRITERION
+  const kEff = input.environment?.k50 ?? input.kFactor
 
   const radials: CoverageRadial[] = []
   let insideTiles = 0
@@ -186,6 +241,7 @@ export function computeCoverage({
 
     // Контрольные дальности: ~60 по радиусу (гранулярность границы ≈ R/60)
     const nTests = 60
+    let strongBroken = false
     for (let k = 1; k <= nTests; k++) {
       const d = (radiusM * k) / nTests
       if (d < 100) continue
@@ -198,17 +254,36 @@ export function computeCoverage({
         if (pointInTiles(point.lat, point.lon, hgtTiles)) insideTiles++
       }
 
+      if (geometric) {
+        const worst = worstClearanceRatio(sliced, d, input.txHeightM, input.rxHeightM, kEff, input.frequencyMhz)
+        if (worst < geometricThreshold) break // первый блок обрывает зону (непрерывность от центра)
+        const dKm = d / 1000
+        radial.maxKm = dKm
+        if (mode === 'fresnel') {
+          if (!strongBroken && worst >= FRESNEL_STRONG) radial.strongKm = dKm
+          else if (worst < FRESNEL_STRONG) strongBroken = true
+        }
+        continue
+      }
+
       const testInput: CalculationInput = {
         ...input,
+        ...(mode === 'fspl'
+          ? { atmosphere: { ...input.atmosphere, vegetation: false, gases: false } }
+          : {}),
         path: {
           ...input.path,
           points: [center, point],
           distanceM: d,
           azimuthDeg: az,
-          profile: sliced,
+          // «Только FSPL»: препятствия (clutter) исключаются из среза
+          profile:
+            mode === 'fspl'
+              ? sliced.map((p) => ({ ...p, clutter: 0, total: p.elev }))
+              : sliced,
         },
       }
-      const prop = computeFsplP526(testInput)
+      const prop = computeFsplP526(testInput, mode === 'fspl' ? { skipDiffraction: true } : undefined)
       const budget = computeLinkBudget(testInput, equipment, prop)
       const margin = budget.linkMarginDb
       const dKm = d / 1000
@@ -256,7 +331,14 @@ export function computeCoverage({
     frequencyMhz: input.frequencyMhz,
     routeKm: input.path.distanceM / 1000,
     routeAzDeg: input.path.azimuthDeg,
-    engineUsed: 'TS: FSPL (P.525) + P.526 + clutter — медиана 50 % времени',
+    engineUsed:
+      mode === 'fspl'
+        ? 'TS: FSPL (P.525) — без рельефа и препятствий (оптимистичная оценка)'
+        : mode === 'geometry'
+          ? 'TS: геометрия LOS — рельеф/препятствия выше прямой обрывают зону (худший случай)'
+          : mode === 'fresnel'
+            ? 'TS: критерий просвета 0.6·F1 (K из ввода; уверенный приём — полный F1)'
+            : 'TS: FSPL (P.525) + P.526 + clutter — медиана 50 % времени',
     computedAtMs: Date.now() - t0,
   }
 }

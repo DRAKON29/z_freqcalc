@@ -9,7 +9,9 @@ import { useEffect, useState } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { useToast } from '@/hooks/use-toast'
 import { useRadioStore } from '@/store/radio-store'
+import { decodeShareHash, encodeShareHash } from '@/lib/radio/share'
 import { InputPanel } from '@/components/radio/InputPanel'
 import { EquipmentPanel } from '@/components/radio/EquipmentPanel'
 import { ResultsPanel } from '@/components/radio/ResultsPanel'
@@ -17,7 +19,7 @@ import { DynamicsPanel } from '@/components/radio/DynamicsPanel'
 import { HistoryPanel } from '@/components/radio/HistoryPanel'
 import { MapsPanel } from '@/components/radio/MapsPanel'
 import { PwaRegister, InstallBanner } from '@/components/radio/Pwa'
-import { Waves, Radar, Plane, History, Map } from 'lucide-react'
+import { Waves, Radar, Plane, History, Map, Share2 } from 'lucide-react'
 
 const MapPanel = dynamic(() => import('@/components/radio/MapPanel').then((m) => m.MapPanel), {
   ssr: false,
@@ -32,6 +34,8 @@ export default function Home() {
   const backendAvailable = useRadioStore((s) => s.backendAvailable)
   const checkBackend = useRadioStore((s) => s.checkBackend)
   const loadItuMaps = useRadioStore((s) => s.loadItuMaps)
+  const applyShareState = useRadioStore((s) => s.applyShareState)
+  const { toast } = useToast()
   const [tab, setTab] = useState('calc')
 
   useEffect(() => {
@@ -40,6 +44,35 @@ export default function Home() {
     // независимо от того, открывалась ли вкладка «Карты»
     void loadItuMaps()
   }, [checkBackend, loadItuMaps])
+
+  // Share-ссылка (этап UX.1): декод hash только на клиенте (SSR-safe) —
+  // присутствующие поля перезаписывают ввод; run=1 запускает расчёт автоматически
+  useEffect(() => {
+    const hash = window.location.hash
+    if (!hash || hash.length < 2) return
+    const share = decodeShareHash(hash.slice(1))
+    if (!share) return
+    applyShareState(share)
+    if (share.run) void calculate()
+    // Однократно на монте: повторный декод того же hash не нужен
+  }, [])
+
+  const onShare = () => {
+    const s = useRadioStore.getState()
+    const params = encodeShareHash(s)
+    const url = `${window.location.origin}${window.location.pathname}#${params}`
+    navigator.clipboard
+      .writeText(url)
+      .then(() =>
+        toast({
+          title: 'Ссылка скопирована',
+          description: 'Вся трасса и параметры расчёта — в URL. Откройте её в новом окне, и расчёт выполнится сам.',
+        }),
+      )
+      .catch(() =>
+        toast({ title: 'Не удалось скопировать', description: url.slice(0, 120) + '…' }),
+      )
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -99,6 +132,9 @@ export default function Home() {
             <div className="flex flex-wrap items-center gap-3">
               <Button onClick={() => void calculate()} disabled={calculating} className="bg-emerald-600 hover:bg-emerald-700">
                 {calculating ? 'Расчёт…' : 'Рассчитать'}
+              </Button>
+              <Button variant="outline" onClick={onShare} title="Скопировать ссылку с трассой и всеми параметрами расчёта">
+                <Share2 className="h-4 w-4 mr-1" /> Поделиться
               </Button>
               {lastError && <span className="text-sm text-destructive">{lastError}</span>}
             </div>

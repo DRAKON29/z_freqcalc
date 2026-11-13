@@ -26,7 +26,8 @@ import { parseSxf, parseRscNames, convertSxfToClutter, mergeClutter } from '@/li
 import { apiUrl } from '@/lib/radio/models/api'
 import { LIMITS } from '@/lib/radio/constants'
 import { ITU_PRODUCTS, ituProductKey } from '@/lib/radio/itu-env'
-import { Map as MapIcon, Upload, Trash2, Mountain, TreePine, Waves, FileBox, RefreshCw, ChevronDown, Globe2 } from 'lucide-react'
+import { encodePresetsFile, parsePresetsFile } from '@/lib/radio/presets'
+import { Map as MapIcon, Upload, Trash2, Mountain, TreePine, Waves, FileBox, RefreshCw, ChevronDown, Globe2, BookmarkPlus, Download } from 'lucide-react'
 
 interface ItuMapInfo {
   name: string
@@ -170,6 +171,12 @@ export function MapsPanel() {
   const addItuGrid = useRadioStore((s) => s.addItuGrid)
   const removeItuGrid = useRadioStore((s) => s.removeItuGrid)
   const loadItuMaps = useRadioStore((s) => s.loadItuMaps)
+
+  // Пользовательские пресеты оборудования (этап UX.2)
+  const presets = useRadioStore((s) => s.presets)
+  const importPresetsAction = useRadioStore((s) => s.importPresets)
+  const deletePresetAction = useRadioStore((s) => s.deletePreset)
+  const [presetImportMode, setPresetImportMode] = useState<'merge' | 'replace'>('merge')
 
   const [maps, setMaps] = useState<ItuMapInfo[]>([])
   const [localItuFiles, setLocalItuFiles] = useState<ItuMapInfo[]>([])
@@ -460,6 +467,43 @@ export function MapsPanel() {
       setLocalItuFiles(await listItuMaps())
     } catch {
       // IndexedDB недоступна
+    }
+  }
+
+  /** Экспорт всех пресетов в JSON-файл (этап UX.2). */
+  const exportPresets = () => {
+    const blob = new Blob([encodePresetsFile(presets)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `radio-presets-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    setMessage(`Экспортировано пресетов: ${presets.length}`)
+  }
+
+  /** Импорт пресетов из JSON-файла в выбранном режиме (merge/replace). */
+  const importPresetsFile = async (file: File) => {
+    setMessage(null)
+    setMapError(null)
+    try {
+      const parsed = parsePresetsFile(await file.text())
+      if (!parsed.ok) {
+        setMapError(`${file.name}: ${parsed.error}`)
+        return
+      }
+      const res = importPresetsAction(parsed.presets, presetImportMode)
+      if (presetImportMode === 'replace') {
+        setMessage(`Пресеты перезаписаны: импортировано ${res.added}`)
+      } else {
+        setMessage(
+          res.added > 0
+            ? `Добавлено пресетов: ${res.added}${res.skipped > 0 ? `, пропущено дубликатов: ${res.skipped}` : ''}`
+            : 'Новых пресетов не добавлено (все — дубликаты)',
+        )
+      }
+    } catch (e) {
+      setMapError(`Ошибка чтения файла: ${e instanceof Error ? e.message : e}`)
     }
   }
 
@@ -787,6 +831,104 @@ export function MapsPanel() {
               </div>
             )}
           </div>
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        title="Пресеты оборудования"
+        icon={<BookmarkPlus className="h-4 w-4 text-emerald-600" />}
+      >
+          <p className="text-xs text-muted-foreground">
+            Пресеты создаёт пользователь: на вкладке «Расчёт» в карточке станции — кнопка
+            «Сохранить пресет как…» (сохраняются антенна и приёмопередатчик станции; высота
+            антенны не входит). Хранятся в браузере (localStorage), применяются к любой станции.
+            Здесь — передача пресетов между устройствами и коллегами через JSON-файл.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" onClick={exportPresets} disabled={presets.length === 0}>
+              <Download className="h-4 w-4 mr-1" /> Экспорт ({presets.length})
+            </Button>
+            <label className="inline-flex">
+              <Input
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f) void importPresetsFile(f)
+                  e.target.value = ''
+                }}
+              />
+              <Button size="sm" variant="outline" asChild>
+                <span><Upload className="h-4 w-4 mr-1" /> Импорт из файла</span>
+              </Button>
+            </label>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Режим импорта</Label>
+            <div className="flex flex-wrap gap-4 text-sm">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="preset-import-mode"
+                  className="accent-emerald-600"
+                  checked={presetImportMode === 'merge'}
+                  onChange={() => setPresetImportMode('merge')}
+                />
+                добавить к существующим
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="preset-import-mode"
+                  className="accent-emerald-600"
+                  checked={presetImportMode === 'replace'}
+                  onChange={() => setPresetImportMode('replace')}
+                />
+                переписать существующие
+              </label>
+            </div>
+            {presetImportMode === 'replace' && (
+              <p className="text-xs font-medium text-destructive">
+                Все ранее созданные и импортированные пресеты будут перезаписаны безвозвратно.
+              </p>
+            )}
+          </div>
+          {presets.length > 0 && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Имя</TableHead>
+                  <TableHead>Станция</TableHead>
+                  <TableHead className="hidden sm:table-cell">Усиление / мощность</TableHead>
+                  <TableHead className="hidden md:table-cell">Создан</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {presets.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="text-sm font-medium">{p.name}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-[10px]">
+                        {p.station === 'ground' ? 'наземная' : 'подвижная'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">
+                      {p.antenna.gainDbi} дБи · {p.radio.powerDbm} дБм · чув. {p.radio.sensitivityDbm} дБм
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-xs text-muted-foreground">
+                      {new Date(p.createdAt).toLocaleString('ru-RU')}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button size="sm" variant="ghost" title="Удалить пресет" onClick={() => deletePresetAction(p.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
       </CollapsibleCard>
 
       <CollapsibleCard title="Настройки и PWA" contentClassName="space-y-2 text-sm">

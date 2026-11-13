@@ -4,20 +4,25 @@
  * Параметры антенн и приёмопередатчиков:
  * переключатель «Упрощённо / Подробно», мощность передатчика в дБм или мВт,
  * полный набор полей подробного режима. Выбор модели и бэкенда расчёта.
+ * Пользовательские пресеты оборудования (этап UX.2): сохранение снимка станции
+ * «Сохранить пресет как…» и применение сохранённых пресетов к любой станции.
  */
 import { useState } from 'react'
 import { useRadioStore } from '@/store/radio-store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useToast } from '@/hooks/use-toast'
 import { MODULATIONS } from '@/lib/radio/constants'
 import { manMadeNoiseFaDb, NOISE_ENVIRONMENT_LABELS } from '@/lib/radio/noise'
 import type { AntennaParams, ModulationId, ModelId, NoiseEnvironment } from '@/lib/radio/types'
-import { SlidersHorizontal, RadioTower, Plane } from 'lucide-react'
+import { SlidersHorizontal, RadioTower, Plane, BookmarkPlus } from 'lucide-react'
 
 type PowerUnit = 'dbm' | 'mw'
 
@@ -72,11 +77,20 @@ function StationCard({
   // Частота линии, на которую смотрит приёмник этой станции (для подсказки Fa):
   // наземный приёмник — обратная линия (частота подвижного), подвижный — прямая
   const rxLinkFreqMhz = useRadioStore((s) => (station === 'ground' ? s.mobileFrequencyMhz : s.frequencyMhz))
+  // Пользовательские пресеты оборудования (этап UX.2)
+  const presets = useRadioStore((s) => s.presets)
+  const savePresetAction = useRadioStore((s) => s.savePreset)
+  const { toast } = useToast()
+  const [saveOpen, setSaveOpen] = useState(false)
+  const [presetName, setPresetName] = useState('')
+  const [presetChoice, setPresetChoice] = useState('')
 
   const isGround = station === 'ground'
   const noiseEnv: NoiseEnvironment = eq.noiseEnvironment ?? 'none'
   const faNow = manMadeNoiseFaDb(noiseEnv, rxLinkFreqMhz)
   const ant = isGround ? eq.tx : eq.rx
+  // Приёмопередатчик этой станции (снимок для пресета)
+  const radio = isGround ? eq.transmitter : eq.receiver
   const setAnt = (patch: Partial<AntennaParams>) =>
     setEquipment(isGround ? { tx: { ...eq.tx, ...patch } } : { rx: { ...eq.rx, ...patch } })
   const txPowerDbm = isGround ? eq.transmitter.powerDbm : eq.receiver.powerDbm
@@ -93,6 +107,27 @@ function StationCard({
         ? { transmitter: { ...eq.transmitter, sensitivityDbm: v } }
         : { receiver: { ...eq.receiver, sensitivityDbm: v } },
     )
+
+  /** Применение сохранённого пресета к этой станции (антенна + приёмопередатчик). */
+  const applyPreset = (id: string) => {
+    const p = presets.find((x) => x.id === id)
+    if (!p) return
+    if (isGround) setEquipment({ tx: { ...p.antenna }, transmitter: { ...p.radio } })
+    else setEquipment({ rx: { ...p.antenna }, receiver: { ...p.radio } })
+    toast({
+      title: 'Пресет применён',
+      description: `«${p.name}» → ${isGround ? 'наземная' : 'подвижная'} станция (${p.antenna.gainDbi} дБи / ${p.radio.powerDbm} дБм)`,
+    })
+  }
+
+  const doSavePreset = () => {
+    const name = presetName.trim()
+    if (!name) return
+    savePresetAction(name, station, ant, radio)
+    setSaveOpen(false)
+    setPresetName('')
+    toast({ title: 'Пресет сохранён', description: `«${name}» · ${isGround ? 'наземная' : 'подвижная'} станция. Импорт/экспорт — во вкладке «Карты и настройки».` })
+  }
 
   return (
     <div className="space-y-3 rounded-lg border p-3">
@@ -274,6 +309,73 @@ function StationCard({
           Окружение, полоса, NF, модуляция — общие для обеих станций (одна радиосистема).
         </p>
       </div>
+
+      {/* Пользовательские пресеты (этап UX.2): сохранение снимка станции и применение */}
+      <div className="space-y-2 rounded-md border p-2.5">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <p className="text-xs font-medium text-muted-foreground">Пресет оборудования</p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setPresetName('')
+              setSaveOpen(true)
+            }}
+          >
+            <BookmarkPlus className="h-3.5 w-3.5 mr-1" /> Сохранить пресет как…
+          </Button>
+        </div>
+        {presets.length > 0 ? (
+          <Select value={presetChoice} onValueChange={(v) => { setPresetChoice(''); applyPreset(v) }}>
+            <SelectTrigger aria-label="Применить сохранённый пресет">
+              <SelectValue placeholder="Применить сохранённый пресет…" />
+            </SelectTrigger>
+            <SelectContent className="max-h-72">
+              {presets.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name} · {p.station === 'ground' ? 'назем.' : 'подвиж.'} · {p.antenna.gainDbi} дБи / {p.radio.powerDbm} дБм
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">
+            Пресетов пока нет — сохраните текущие антенну и приёмопередатчик этой станции кнопкой выше.
+            Импорт/экспорт пресетов — во вкладке «Карты и настройки».
+          </p>
+        )}
+      </div>
+
+      <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Введите имя пресета</DialogTitle>
+            <DialogDescription>
+              Сохраняются антенна и приёмопередатчик {isGround ? 'наземной' : 'подвижной'} станции
+              (усиление, ширина луча, мощность, чувствительность и подробные поля). Высота антенны
+              не входит — она не радио-параметр.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={presetName}
+            onChange={(e) => setPresetName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') doSavePreset()
+            }}
+            placeholder="Например: РРС 0.6 м · 5.8 ГГц"
+            aria-label="Введите имя пресета"
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveOpen(false)}>
+              Отмена
+            </Button>
+            <Button onClick={doSavePreset} disabled={!presetName.trim()}>
+              Сохранить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
