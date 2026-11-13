@@ -46,13 +46,14 @@ NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000/api bun run dev
 ## Верификация (регресс)
 
 ```bash
-bun test tests/          # 127 тестов TS-ядра — должны быть зелёными
+bun test tests/          # 150 тестов TS-ядра — должны быть зелёными
 bun run lint             # eslint — чисто
 cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q   # 61 тест формул и API
 ```
 
 E2E (стек уже запущен: сервис :8000 + фронт :3000):
-`PLAYWRIGHT_CHANNEL=msedge bunx playwright test` (15 сценариев).
+`PLAYWRIGHT_CHANNEL=msedge bunx playwright test` (21 сценарий; 6 из них — e2e/ux.spec.ts:
+share-ссылка, пресеты, режимы преград, fullscreen).
 
 Контрольные значения на дефолтных вводных (Москва A→Б, 2400 МГц, P.2001, http):
 медианные потери **173.0 дБ**, P_rx **−132.7 дБм**, margin **−31.3 дБ**
@@ -61,13 +62,33 @@ E2E (стек уже запущен: сервис :8000 + фронт :3000):
 
 ## Состояние (2026-11-08, актуализировано в `a0422b4`+)
 
-Ветка разработки — **`dev_`** (не main; main = исходный клон). Remote: `origin`,
-HEAD — см. git log (на момент актуализации `9ead9e4`), рабочее дерево чистое,
-всё запушено, CI зелёный (lint/pytest/build/E2E + деплой-джоба внутри CI;
-прод — https://calc.drakonlab.ru). Тег `init_tag` стоит на `6b9ae47`
+Ветка разработки — **`dev_`** (не main; main = исходный клон). Remote: `origin`, HEAD — см.
+git log; **локальные коммиты (обзор конкурентов, этап UX) НЕ запушены — регламент пользователя:
+пуш только по явной команде**; прод calc.drakonlab.ru пока на `075f1a3` (CI запустится при пуше).
+Тег **`допфункционал`** — зафиксированное состояние перед этапом UX (push тега CI не триггерит).
+Тег `init_tag` стоит на `6b9ae47`
 (устарел относительно HEAD). Коммиты — conventional на русском, пушим в `dev_`.
 
 Реализовано (сверху вниз):
+- (этот коммит) **этап UX (UX.1–UX.6, референс antenna.2tg.dev, тег `допфункционал` — точка отсчёта)**:
+  UX.1 share-ссылка (`src/lib/radio/share.ts` — encode/decode URL-hash с zod-валидацией,
+  tolerant; кнопка «Поделиться» в page.tsx, clipboard+toast; декод на монте + autorun `run=1`;
+  store-действие `applyShareState`; НЕ сериализуются карты/тайлы/clutter/маршрут);
+  UX.2 пользовательские пресеты оборудования (`src/lib/radio/presets.ts` — localStorage
+  `radio-presets`, merge/replace, JSON-файл v1; StationCard: «Сохранить пресет как…»
+  (Dialog) + селектор применения к любой станции; MapsPanel: секция «Пресеты оборудования»
+  — экспорт/импорт с двумя режимами и красным предупреждением перезаписи; store:
+  `presets`/`savePreset`/`deletePreset`/`importPresets`); UX.3 режимы преград покрытия
+  (`computeFsplP526(input, opts?: {skipDiffraction})` аддитивно; `computeCoverage({mode})`:
+  model/fspl/geometry/fresnel, геометрическая классификация через
+  `worstClearanceRatio` (LOS/0.6·F1, непрерывная зона от центра); store `coverageMode`;
+  CoveragePanel: селектор с честными подписями, адаптивная легенда); UX.4 drag маркеров
+  A/Б (персистентные инстансы вместо recreate, dragend → setPointA/B, без автопересчёта);
+  UX.5 fullscreen карты (CSS fixed inset-0, invalidateSize, Escape); UX.6 mesh-заготовка
+  (`src/lib/radio/mesh.ts` — типы + `evaluateMeshChain` бросает исключение; п. 2.4 заморожен,
+  UI нет). Тесты: 150 TS (+23: share 8, presets 9, coverage-modes 5, mesh 1), 21 E2E (+6
+  e2e/ux.spec.ts); drag проверен в браузере (IAB cua.drag → точка A изменилась)
+- `075f1a3` fix(ui): однозначные подписи направления в блоках Передатчик/Приёмник карточек станций
 - (этот коммит) **роадмап 2.1 — Longley-Rice ITM ('itm')**: вендоренный порт ITM
   v1.2.2 (AB3AP, public domain NTIA/ITS) в itm_port.py + адаптер itm_model.py
   (climate=5, N0=301, epsR/sigma из input, zT=Φ⁻¹(p/100)); dispatch elif model=="itm"
@@ -213,6 +234,9 @@ HEAD — см. git log (на момент актуализации `9ead9e4`), �
 | `src/lib/radio/availability.ts` | availability-отчёт P.530-19: недоступность ч/год, цели 99.5/99.9/99.99; R0.01 из карт/ввода/зоны дождя |
 | `src/lib/radio/clearance.ts` | clearance-аудит: 0.6·F1 при K = 4/3, 2/3, ∞, класс трассы light/heavy, доп. потери подрефракции |
 | `src/lib/radio/noise.ts` | P.372-17: фиты техногенного шума Table 1, `manMadeNoiseFaDb`, комбинация `systemNoisePowerDbm` |
+| `src/lib/radio/share.ts` | share-ссылка (этап UX.1): encode/decode URL-hash входных параметров (zod, tolerant), base64url equipment |
+| `src/lib/radio/presets.ts` | пользовательские пресеты оборудования (этап UX.2): localStorage `radio-presets`, merge/replace, JSON-файл v1 |
+| `src/lib/radio/mesh.ts` | mesh-заготовка (этап UX.6): типы MeshLink/MeshChain + `evaluateMeshChain` (бросает исключение; п. 2.4 ROADMAP заморожен) |
 | `mini-services/radio-service/reports.py` | python-зеркало availability + clearance (эталонные формулы, pytest) |
 | `mini-services/radio-service/itm_port.py` + `itm_model.py` | вендоренный ITM v1.2.2 + адаптер модели 'itm' (pytest test_itm.py) |
 | `src/lib/radio/route.ts` | файл траектории: `parseRouteFile` (JSON → zod), сегментация с кэшем (WeakMap), `routeStateAt(route, t)` — позиция/высота/скорость/вертикальная скорость в момент t, `routeDurationS` |
