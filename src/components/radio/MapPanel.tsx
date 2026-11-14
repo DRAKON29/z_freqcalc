@@ -6,7 +6,7 @@
  * тайлов рельефа, траектория объекта, переключение типа карты
  * (схема / спутник / гибрид), анимация при ≥ 24 FPS с измерением FPS.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type * as LType from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useRadioStore } from '@/store/radio-store'
@@ -55,6 +55,9 @@ export function MapPanel() {
   const baseLayerRef = useRef<LType.TileLayer | null>(null)
   const overlayLayerRef = useRef<LType.TileLayer | null>(null)
   const tilesLayerRef = useRef<LType.LayerGroup | null>(null)
+  /** Вид карты на момент переключения полноэкранного режима — для восстановления */
+  const viewRef = useRef<{ center: LType.LatLng; zoom: number } | null>(null)
+  const fsBtnRef = useRef<HTMLButtonElement | null>(null)
 
   const [clickMode, setClickMode] = useState<'A' | 'Б' | 'C'>('Б')
   const [mapStyle, setMapStyle] = useState<MapStyle>('scheme')
@@ -116,14 +119,32 @@ export function MapPanel() {
   const clickModeRef = useRef(clickMode)
   clickModeRef.current = clickMode
 
-  // Полноэкранный режим карты (этап UX.5): CSS fixed-контейнер (не Fullscreen API —
-  // надёжнее в PWA); после смены размера Leaflet пересчитывает тайлы, Escape закрывает
-  useEffect(() => {
-    if (!fullscreen) return
+  // Полноэкранный режим карты (этап UX.5): контейнер fixed поверх страницы,
+  // кнопка управления — ВНУТРИ контейнера карты (внешняя кнопка перекрывалась
+  // полноэкранным слоем и становилась недостижимой). После смены класса
+  // пересчитываем размер Leaflet и детерминированно восстанавливаем вид
+  // (центр/зум на момент переключения) — иначе вид «улетает». Escape закрывает.
+  const toggleFullscreen = useCallback(() => {
     const map = mapRef.current
-    const t = setTimeout(() => map?.invalidateSize(), 60)
+    if (map) viewRef.current = { center: map.getCenter(), zoom: map.getZoom() }
+    setFullscreen((v) => !v)
+  }, [])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const t = setTimeout(() => {
+      // Двойной пересчёт: после фиксации CSS и после перерисовки тайлов
+      map.invalidateSize({ animate: false, pan: false })
+      const v = viewRef.current
+      if (v) map.setView(v.center, v.zoom, { animate: false })
+      map.invalidateSize({ animate: false, pan: false })
+    }, 80)
+    if (!fullscreen) {
+      return () => clearTimeout(t)
+    }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setFullscreen(false)
+      if (e.key === 'Escape') toggleFullscreen()
     }
     window.addEventListener('keydown', onKey)
     return () => {
@@ -131,6 +152,16 @@ export function MapPanel() {
       window.removeEventListener('keydown', onKey)
     }
   }, [fullscreen])
+
+  // Кнопка полноэкранного режима лежит внутри контейнера Leaflet: клики по ней
+  // не должны ставить точку A/Б/C и крутить зум — отключаем всплытие событий
+  useEffect(() => {
+    const el = fsBtnRef.current
+    const leaflet = LRef.current
+    if (!el || !leaflet) return
+    leaflet.DomEvent.disableClickPropagation(el)
+    leaflet.DomEvent.disableScrollPropagation(el)
+  }, [L, fullscreen])
 
   // Переключение типа карты (схема / спутник / гибрид)
   useEffect(() => {
@@ -447,24 +478,45 @@ export function MapPanel() {
             Анимация отключена: FPS {fpsMeasured ?? '<24'} &lt; {FPS_THRESHOLD} — используйте графики
           </Badge>
         )}
-        <Button
-          size="sm"
-          variant={fullscreen ? 'default' : 'outline'}
-          onClick={() => setFullscreen((v) => !v)}
-          title={fullscreen ? 'Свернуть карту (Esc)' : 'Развернуть карту на весь экран'}
-        >
-          {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          {fullscreen ? 'Свернуть' : 'Во весь экран'}
-        </Button>
       </div>
       <div
         ref={mapDivRef}
-        className={
+        className="h-[380px] w-full rounded-lg border z-0"
+        data-fullscreen={fullscreen ? 'true' : undefined}
+        style={
           fullscreen
-            ? 'fixed inset-0 z-[1000] h-full w-full rounded-none border-0 bg-background'
-            : 'h-[380px] w-full rounded-lg border z-0'
+            ? {
+                // Инлайн-стили вместо className: React-перезапись className
+                // удаляла Leaflet-класс .leaflet-container, а .leaflet-container
+                // { position: relative } из leaflet.css (без @layer) перекрывал
+                // Tailwind-класс fixed — карта «падала» (высота 0, тайлы нет)
+                position: 'fixed',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                left: 0,
+                zIndex: 1000,
+                width: '100vw',
+                height: '100vh',
+                borderRadius: 0,
+                borderWidth: 0,
+              }
+            : undefined
         }
-      />
+      >
+        {/* Кнопка полноэкранного режима — внутри карты: во весь экран карту
+            разворачивает слой, перекрывающий внешние элементы тулбара */}
+        <button
+          ref={fsBtnRef}
+          type="button"
+          onClick={toggleFullscreen}
+          className="absolute top-2.5 right-2.5 z-[900] inline-flex items-center gap-1.5 rounded-md border border-input bg-background/90 px-2.5 py-1.5 text-xs font-medium shadow-sm hover:bg-accent hover:text-accent-foreground"
+          title={fullscreen ? 'Свернуть карту (Esc)' : 'Развернуть карту на весь экран'}
+        >
+          {fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+          {fullscreen ? 'Свернуть' : 'Во весь экран'}
+        </button>
+      </div>
       <p className="text-xs text-muted-foreground">
         Клик по карте ставит выбранную точку (или источник помехи в режиме «помеха»), маркеры A, Б и C
         можно перетаскивать (позиция переносится в форму). Зона связи показывается после расчёта, траектория —

@@ -85,13 +85,18 @@ test('режимы преград: селектор переключается, 
   await expect(page.getByText(/худший случай/).first()).toBeVisible()
 })
 
-test('fullscreen карты: разворот и сворачивание по Escape', async ({ page }) => {
+test('fullscreen карты: разворот, клик по кнопке внутри карты, сворачивание', async ({ page }) => {
   await page.goto('/')
+  // Кнопка теперь внутри контейнера карты — доступна и после разворота
   await page.getByRole('button', { name: /Во весь экран/ }).click()
-  // Контейнер перешёл в fixed-режим на весь экран
-  const fixedContainer = page.locator('div[class*="inset-0"]')
-  await expect(fixedContainer).toHaveCount(1)
-  await expect(page.getByRole('button', { name: /Свернуть/ })).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(fixedContainer).toHaveCount(0)
+  // Контейнер перешёл в полноэкранный режим (data-атрибут + размеры вьюпорта)
+  const fsContainer = page.locator('div[data-fullscreen="true"]')
+  await expect(fsContainer).toBeVisible()
+  const box = await fsContainer.boundingBox()
+  expect(box?.height ?? 0).toBeGreaterThan(600) // полноэкранный, а не 380px
+  // Кнопка «Свернуть» внутри полноэкранной карты кликабельна (регресс:
+  // раньше внешняя кнопка уходила под слой карты)
+  await page.getByRole('button', { name: /Свернуть/ }).click()
+  await expect(fsContainer).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Во весь экран/ })).toBeVisible()
 })
