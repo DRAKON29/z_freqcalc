@@ -46,6 +46,7 @@ export function MapPanel() {
   const mapRef = useRef<LType.Map | null>(null)
   const markerARef = useRef<LType.Marker | null>(null)
   const markerBRef = useRef<LType.Marker | null>(null)
+  const markerCRef = useRef<LType.Marker | null>(null)
   const lineRef = useRef<LType.Polyline | null>(null)
   const zoneRef = useRef<LType.Circle | null>(null)
   const trajRef = useRef<LType.Polyline | null>(null)
@@ -55,7 +56,7 @@ export function MapPanel() {
   const overlayLayerRef = useRef<LType.TileLayer | null>(null)
   const tilesLayerRef = useRef<LType.LayerGroup | null>(null)
 
-  const [clickMode, setClickMode] = useState<'A' | 'Б'>('Б')
+  const [clickMode, setClickMode] = useState<'A' | 'Б' | 'C'>('Б')
   const [mapStyle, setMapStyle] = useState<MapStyle>('scheme')
   const [showTiles, setShowTiles] = useState(true)
   const [fullscreen, setFullscreen] = useState(false)
@@ -76,6 +77,8 @@ export function MapPanel() {
   const animationAllowed = useRadioStore((s) => s.animationAllowed)
   const fpsMeasured = useRadioStore((s) => s.fpsMeasured)
   const lastInput = useRadioStore((s) => s.lastInput)
+  const interferenceEnabled = useRadioStore((s) => s.interferenceEnabled)
+  const interferenceSource = useRadioStore((s) => s.interferenceSource)
   const setField = useRadioStore((s) => s.setField)
 
   // Класс трассы (clearance-аудит): бейдж light/heavy в тулбаре карты
@@ -98,6 +101,7 @@ export function MapPanel() {
       map.on('click', (e: LType.LeafletMouseEvent) => {
         const p = { lat: e.latlng.lat, lon: e.latlng.lng }
         if (clickModeRef.current === 'A') setPointA(p)
+        else if (clickModeRef.current === 'C') setField('interferenceSource', p)
         else setPointB(p)
       })
       mapRef.current = map
@@ -229,6 +233,35 @@ export function MapPanel() {
     // fitBounds траектории (эффект ниже) при перемонтировании вкладки.
     map.fitBounds(lineRef.current.getBounds(), { padding: [50, 50], maxZoom: 15, animate: false })
   }, [pointA, pointB, L, setPointA, setPointB])
+
+  // Маркер источника помехи (роадмап 2.3): персистентный, перетаскиваемый
+  useEffect(() => {
+    const leaflet = LRef.current
+    const map = mapRef.current
+    if (!leaflet || !map) return
+    if (!interferenceEnabled) {
+      markerCRef.current?.remove()
+      markerCRef.current = null
+      return
+    }
+    const iconC = leaflet.divIcon({
+      html: `<div style="background:#dc2626;color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)">C</div>`,
+      className: '',
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
+    })
+    if (!markerCRef.current) {
+      markerCRef.current = leaflet
+        .marker([interferenceSource.lat, interferenceSource.lon], { icon: iconC, draggable: true, autoPan: true })
+        .addTo(map)
+      markerCRef.current.on('dragend', () => {
+        const ll = markerCRef.current!.getLatLng()
+        setField('interferenceSource', { lat: ll.lat, lon: ll.lng })
+      })
+    } else {
+      markerCRef.current.setLatLng([interferenceSource.lat, interferenceSource.lon])
+    }
+  }, [interferenceEnabled, interferenceSource, L, setField])
 
   // Зона связи
   useEffect(() => {
@@ -375,6 +408,14 @@ export function MapPanel() {
         >
           Клик → точка Б
         </Button>
+        <Button
+          size="sm"
+          variant={clickMode === 'C' ? 'default' : 'outline'}
+          className={clickMode === 'C' ? 'bg-red-600 hover:bg-red-700' : ''}
+          onClick={() => setClickMode('C')}
+        >
+          Клик → помеха
+        </Button>
         <div className="flex items-center gap-1.5 ml-1 pl-2 border-l">
           <span className="text-xs text-muted-foreground mr-1">Тип карты:</span>
           {styleBtn('scheme', 'Схема')}
@@ -425,9 +466,9 @@ export function MapPanel() {
         }
       />
       <p className="text-xs text-muted-foreground">
-        Клик по карте ставит выбранную точку, маркеры A и Б можно перетаскивать (позиция переносится в форму).
-        Зона связи показывается после расчёта, траектория — после расчёта динамики, границы загруженных тайлов
-        рельефа — бирюзовым пунктиром.
+        Клик по карте ставит выбранную точку (или источник помехи в режиме «помеха»), маркеры A, Б и C
+        можно перетаскивать (позиция переносится в форму). Зона связи показывается после расчёта, траектория —
+        после расчёта динамики, границы загруженных тайлов рельефа — бирюзовым пунктиром.
       </p>
     </div>
   )

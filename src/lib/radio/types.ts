@@ -365,6 +365,63 @@ export interface RangeFreqResult {
   snrDb: number
 }
 
+/** Класс влияния помехи (по деградации шума Δ = 10lg(1 + I/N)). */
+export type InterferenceImpact = 'none' | 'minor' | 'notable' | 'severe'
+
+/** Уровень помехи в приёмнике-жертве для одного процента времени p. */
+export interface InterferenceLevel {
+  /** Процент времени, для которого посчитаны потери пути помехи (P.452) */
+  p: number
+  /** Потери пути помехи, дБ */
+  pathLossDb: number
+  /** Уровень помехи в приёмнике жертвы, дБм */
+  iDbm: number
+  /** Отношение помеха/шум I/N, дБ */
+  inDb: number
+  /** Полезный сигнал / помеха C/I, дБ */
+  ciDb: number
+  /** Деградация шума Δ = 10lg(1 + I/N), дБ */
+  degradationDb: number
+}
+
+/**
+ * Отчёт интерференции (роадмап 2.3): C полезной линии против I от источника
+ * помехи (путь по ITU-R P.452-18) и N = kTB + NF (+Fa по P.372).
+ */
+export interface InterferenceReport {
+  /** Источник помехи */
+  source: LatLon
+  /** Позиция жертвы (точка Б для прямой, A для обратной линии) */
+  victimPoint: LatLon
+  /** Куда смотрит главный лепесток антенны жертвы (позиция её Tx) */
+  victimTxPoint: LatLon
+  /** Длина пути помехи, км */
+  pathKm: number
+  /** Частота помехи, МГц */
+  frequencyMhz: number
+  /** EIRP источника помехи, дБм */
+  eirpDbm: number
+  /** Фактический движок пути помехи (P.452 или фоллбек) */
+  engineUsed: string
+  warnings: string[]
+  /** Защитное отношение, дБ */
+  ciMinDb: number
+  /** Источник критерия: дефолт (Eb/N0 приёмника) или пользователь */
+  ciMinSource: 'default-ebn0' | 'user'
+  /** Медиана p = 50 % */
+  median: InterferenceLevel
+  /** Коротковременная помеха p = 1 % (null — не считалась, например фоллбек) */
+  shortTerm: InterferenceLevel | null
+  /** Защитное отношение выполнено (по медиане): C/I ≥ C/I_min */
+  ciMet: boolean
+  /** Класс влияния по деградации шума (медиана) */
+  impact: InterferenceImpact
+  /** SNR с помехой C/(N+I), дБ */
+  snrWithIDb: number
+  /** Запас линии с помехой: linkMargin − Δ, дБ */
+  marginWithIDb: number
+}
+
 /** История расчётов. */
 export interface HistoryLinkParams {
   /**

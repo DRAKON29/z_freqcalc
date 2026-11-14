@@ -29,9 +29,17 @@ import { Radio, Clock, Navigation } from 'lucide-react'
  * из введённых координат (если Y ≥ 1 000 000, номер зоны вычисляется из Y,
  * иначе берётся зона текущего положения точки).
  */
-function CoordEditor({ which }: { which: 'A' | 'Б' }) {
-  const point = useRadioStore((s) => (which === 'A' ? s.pointA : s.pointB))
-  const setPoint = useRadioStore((s) => (which === 'A' ? s.setPointA : s.setPointB))
+function CoordEditor({ which }: { which: 'A' | 'Б' | 'C' }) {
+  // ВАЖНО: селектор zustand не должен создавать новые объекты/функции
+  // (useSyncExternalStore требует кэшируемый getSnapshot) — поэтому для 'C'
+  // пишем через setField вне селектора, а не inline-стрелкой в селекторе.
+  const point = useRadioStore((s) =>
+    which === 'A' ? s.pointA : which === 'Б' ? s.pointB : s.interferenceSource,
+  )
+  const setStorePoint = useRadioStore((s) => (which === 'A' ? s.setPointA : which === 'Б' ? s.setPointB : null))
+  const setField = useRadioStore((s) => s.setField)
+  const setPoint = (p: { lat: number; lon: number }) =>
+    which === 'C' ? setField('interferenceSource', p) : setStorePoint?.(p)
   const sk = sk42Of(point)
   const yNoZone = Math.round(sk.y) - sk.zone * 1e6
   const [skInput, setSkInput] = useState<string>(() => `${Math.round(sk.x)} ${yNoZone}`)
@@ -209,6 +217,104 @@ export function InputPanel() {
           <div>
             <p className="text-sm font-medium text-amber-700">Точка Б (подвижный Rx — текущая позиция объекта)</p>
             <CoordEditor which="Б" />
+          </div>
+          <Separator />
+          {/* Источник помехи (роадмап 2.3, C/I): жертвами являются Rx прямой
+              линии (точка Б) и Rx обратной линии (точка A) */}
+          <div className="rounded-lg border border-red-200 dark:border-red-900/50 p-2.5 space-y-2">
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={s.interferenceEnabled}
+                onCheckedChange={(v) => s.setField('interferenceEnabled', v === true)}
+                aria-label="Учитывать помеху"
+              />
+              <span className="font-medium text-red-700 dark:text-red-400">Источник помехи (C/I, P.452)</span>
+            </label>
+            {s.interferenceEnabled && (
+              <div className="space-y-3">
+                <CoordEditor which="C" />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs">Высота антенны помехи, м</Label>
+                    <Input
+                      type="number"
+                      min={0.5}
+                      max={5000}
+                      step={0.5}
+                      value={s.interferenceHeightM}
+                      onChange={(e) => s.setField('interferenceHeightM', Number(e.target.value))}
+                      aria-label="Высота антенны помехи, м"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Мощность, дБм</Label>
+                    <Input
+                      type="number"
+                      step={1}
+                      value={s.interferencePowerDbm}
+                      onChange={(e) => s.setField('interferencePowerDbm', Number(e.target.value))}
+                      aria-label="Мощность помехи, дБм"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Усиление, дБи</Label>
+                    <Input
+                      type="number"
+                      step={0.1}
+                      value={s.interferenceGainDbi}
+                      onChange={(e) => s.setField('interferenceGainDbi', Number(e.target.value))}
+                      aria-label="Усиление помехи, дБи"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Частота помехи, МГц</Label>
+                    <Input
+                      type="number"
+                      min={LIMITS.frequencyMinMhz}
+                      max={LIMITS.frequencyMaxMhz}
+                      value={s.interferenceFrequencyMhz}
+                      onChange={(e) => s.setField('interferenceFrequencyMhz', Number(e.target.value))}
+                      aria-label="Частота помехи, МГц"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Радиоклиматическая зона (P.452)</Label>
+                    <Select
+                      value={String(s.interferenceZone)}
+                      onValueChange={(v) => s.setField('interferenceZone', Number(v) as 1 | 2 | 3)}
+                    >
+                      <SelectTrigger aria-label="Радиоклиматическая зона помехи">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">Прибрежная суша</SelectItem>
+                        <SelectItem value="2">Суша</SelectItem>
+                        <SelectItem value="3">Море</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Защитное отношение C/I_min, дБ</Label>
+                    <Input
+                      type="number"
+                      step={0.5}
+                      value={s.interferenceCiMinDb ?? ''}
+                      placeholder={`по умолчанию ${(s.equipment.receiver.requiredEbN0Db ?? 9.6).toFixed(1)}`}
+                      onChange={(e) =>
+                        s.setField('interferenceCiMinDb', e.target.value === '' ? null : Number(e.target.value))
+                      }
+                      aria-label="Защитное отношение C/I min, дБ"
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Путь помехи — ITU-R P.452-18 (python-сервис, карты N050/DN50); при недоступности —
+                  медиана P.2001-lite. Помеха считается ко-канальной (полное спектральное перекрытие) и
+                  складывается с шумом приёмника (N = kTB + NF + Fa). Жертвы: Rx прямой линии (точка Б)
+                  и Rx обратной линии (точка A); разнос антенн жертвы — по ширине луча.
+                </p>
+              </div>
+            )}
           </div>
           <Separator />
           <div className="rounded-lg border bg-muted/30 p-3 space-y-1.5">

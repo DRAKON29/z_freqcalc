@@ -25,7 +25,13 @@ import type {
 import { createModel, defaultBackend } from '@/lib/radio/models'
 import { computeLinkBudget } from '@/lib/radio/budget'
 import { availabilityExpenseRow, computeAvailabilityReport } from '@/lib/radio/availability'
+import {
+  buildInterferenceReport,
+  computeInterferencePathLosses,
+  type InterferencePathPayload,
+} from '@/lib/radio/interference'
 import type { CoverageMode } from '@/lib/radio/coverage'
+import type { InterferenceReport } from '@/lib/radio/types'
 import type { ShareState } from '@/lib/radio/share'
 import { loadPresets, makePreset, mergePresets, replacePresets, savePresets, type EquipmentPreset } from '@/lib/radio/presets'
 
@@ -199,6 +205,28 @@ export interface RadioState {
   /** Прогресс перебора кандидатных позиций */
   searchProgress: { done: number; total: number } | null
 
+  // Интерференция C/I (роадмап 2.3, P.452 + P.372)
+  /** Учитывать источник помехи */
+  interferenceEnabled: boolean
+  /** Координаты источника помехи */
+  interferenceSource: LatLon
+  /** Высота антенны источника помехи, м */
+  interferenceHeightM: number
+  /** Мощность передатчика помехи, дБм */
+  interferencePowerDbm: number
+  /** Усиление антенны помехи, дБи */
+  interferenceGainDbi: number
+  /** Частота помехи, МГц (ко-канальная, по умолчанию = частота полезной линии) */
+  interferenceFrequencyMhz: number
+  /** Радиоклиматическая зона P.452: 1 прибрежная / 2 суша / 3 море */
+  interferenceZone: 1 | 2 | 3
+  /** Защитное отношение C/I_min, дБ (null — дефолт = Eb/N0 приёмника) */
+  interferenceCiMinDb: number | null
+  /** Отчёт помехи для жертвы прямой линии (Rx в точке Б) */
+  interferenceReport: InterferenceReport | null
+  /** Отчёт помехи для жертвы обратной линии (Rx в точке A) */
+  reverseInterferenceReport: InterferenceReport | null
+
   // Динамика
   dynamicsParams: DynamicParams
   altitudeMode: 'single' | 'multi'
@@ -305,6 +333,18 @@ export const useRadioStore = create<RadioState>((set, get) => ({
   searchRadiusM: 1000,
   searchReport: null,
   searchProgress: null,
+
+  // Интерференция C/I (роадмап 2.3)
+  interferenceEnabled: false,
+  interferenceSource: { lat: 55.795, lon: 37.8 }, // рядом с дефолтной трассой
+  interferenceHeightM: 30,
+  interferencePowerDbm: 30,
+  interferenceGainDbi: 10,
+  interferenceFrequencyMhz: 2400,
+  interferenceZone: 2,
+  interferenceCiMinDb: null,
+  interferenceReport: null,
+  reverseInterferenceReport: null,
 
   dynamicsParams: {
     altitudeM: 500,
@@ -766,6 +806,128 @@ export const useRadioStore = create<RadioState>((set, get) => ({
         }
       }
 
+      // Интерференция C/I (роадмап 2.3): путь помехи по P.452 от источника к
+      // жертвам — Rx прямой линии в точке Б и Rx обратной линии в точке A.
+      // Вердикт — чистая функция на клиенте (см. interference.ts); потери пути
+      // считает python (P.452), при недоступности — фоллбек P.2001-lite.
+      let interferenceReport: InterferenceReport | null = null
+      let reverseInterferenceReport: InterferenceReport | null = null
+      if (s.interferenceEnabled && budget) {
+        try {
+          // Подкачка тайлов обоих путей помехи (ломаная источник→Б→A)
+          await get().fetchMissingSrtmTiles([s.interferenceSource, s.pointB, s.pointA])
+          const sNow = get()
+          const dem = sNow.hgtTiles.length > 0 ? createHgtDem(sNow.hgtTiles) : createSyntheticDem()
+          const clutterSampler = sNow.clutter ? makeClutterSampler(sNow.clutter) : undefined
+          const eirpDbm = s.interferencePowerDbm + s.interferenceGainDbi
+
+          const payloads: InterferencePathPayload[] = []
+          const fallbackInputs: Record<string, CalculationInput> = {}
+
+          // Жертва прямой линии: Rx в точке Б, антенна eq.rx, луч смотрит на A
+          const profileFwd = buildProfile(s.interferenceSource, s.pointB, dem, clutterSampler)
+          payloads.push({
+            id: 'forward',
+            source: s.interferenceSource,
+            victim: s.pointB,
+            txHeightM: s.interferenceHeightM,
+            rxHeightM: s.rxHeightM,
+            profile: {
+              d: profileFwd.map((p) => p.d),
+              h: profileFwd.map((p) => p.elev),
+              g: profileFwd.map((p) => p.total),
+            },
+          })
+          fallbackInputs.forward = {
+            ...lastInput,
+            frequencyMhz: s.interferenceFrequencyMhz,
+            path: {
+              ...lastInput.path,
+              points: [s.interferenceSource, s.pointB],
+              distanceM: distanceM(s.interferenceSource, s.pointB),
+              azimuthDeg: bearingDeg(s.interferenceSource, s.pointB),
+              profile: profileFwd,
+              demStepM: dem.resolutionM,
+              demSource: dem.name,
+            },
+          }
+
+          // Жертва обратной линии: наземный Rx в точке A (когда она посчитана)
+          if (reverseBudget && reverseInput) {
+            const profileRev = buildProfile(s.interferenceSource, s.pointA, dem, clutterSampler)
+            payloads.push({
+              id: 'reverse',
+              source: s.interferenceSource,
+              victim: s.pointA,
+              txHeightM: s.interferenceHeightM,
+              rxHeightM: s.txHeightM,
+              profile: {
+                d: profileRev.map((p) => p.d),
+                h: profileRev.map((p) => p.elev),
+                g: profileRev.map((p) => p.total),
+              },
+            })
+            fallbackInputs.reverse = {
+              ...lastInput,
+              frequencyMhz: s.interferenceFrequencyMhz,
+              path: {
+                ...lastInput.path,
+                points: [s.interferenceSource, s.pointA],
+                distanceM: distanceM(s.interferenceSource, s.pointA),
+                azimuthDeg: bearingDeg(s.interferenceSource, s.pointA),
+                profile: profileRev,
+                demStepM: dem.resolutionM,
+                demSource: dem.name,
+              },
+            }
+          }
+
+          const losses = await computeInterferencePathLosses({
+            paths: payloads,
+            frequencyMhz: s.interferenceFrequencyMhz,
+            polarization: s.polarization,
+            zone: s.interferenceZone,
+            fallbackInputs,
+          })
+
+          const ciMinDefault = s.equipment.receiver.requiredEbN0Db ?? 9.6
+          interferenceReport = buildInterferenceReport({
+            source: s.interferenceSource,
+            victimPoint: s.pointB,
+            victimTxPoint: s.pointA,
+            frequencyMhz: s.interferenceFrequencyMhz,
+            carrierDbm: budget.prxDbm,
+            noisePowerDbm: budget.noisePowerDbm,
+            linkMarginDb: budget.linkMarginDb,
+            requiredEbN0Db: ciMinDefault,
+            ciMinDb: s.interferenceCiMinDb,
+            interferenceEirpDbm: eirpDbm,
+            victimAntenna: s.equipment.rx,
+            losses: losses.forward,
+          })
+          if (reverseBudget && losses.reverse) {
+            // Жертва обратной линии: наземный Rx в точке A, антенна eq.tx
+            // (обратная линия: rx = equipment.tx), Eb/N0 общий для радиосистемы
+            reverseInterferenceReport = buildInterferenceReport({
+              source: s.interferenceSource,
+              victimPoint: s.pointA,
+              victimTxPoint: s.pointB,
+              frequencyMhz: s.interferenceFrequencyMhz,
+              carrierDbm: reverseBudget.prxDbm,
+              noisePowerDbm: reverseBudget.noisePowerDbm,
+              linkMarginDb: reverseBudget.linkMarginDb,
+              requiredEbN0Db: ciMinDefault,
+              ciMinDb: s.interferenceCiMinDb,
+              interferenceEirpDbm: eirpDbm,
+              victimAntenna: s.equipment.tx,
+              losses: losses.reverse,
+            })
+          }
+        } catch {
+          interferenceReport = null // помеха — не критичный путь
+        }
+      }
+
       set({
         result,
         budget,
@@ -780,6 +942,8 @@ export const useRadioStore = create<RadioState>((set, get) => ({
         lastInput,
         searchReport,
         searchProgress: null,
+        interferenceReport,
+        reverseInterferenceReport,
         calculating: false,
         lastCalculatedAt: new Date().toISOString(),
       })
@@ -901,7 +1065,7 @@ export const useRadioStore = create<RadioState>((set, get) => ({
     }
   },
 
-  resetResults: () => set({ result: null, budget: null, availability: null, comparison: null, reverseResult: null, reverseBudget: null, reverseInput: null, reverseAvailability: null, reverseRangeResults: null, rangeResults: null, searchReport: null, searchProgress: null, dynamics: null, dynamicsAll: [], dynamicsProgress: null, lastError: null }),
+  resetResults: () => set({ result: null, budget: null, availability: null, comparison: null, reverseResult: null, reverseBudget: null, reverseInput: null, reverseAvailability: null, reverseRangeResults: null, rangeResults: null, searchReport: null, searchProgress: null, interferenceReport: null, reverseInterferenceReport: null, dynamics: null, dynamicsAll: [], dynamicsProgress: null, lastError: null }),
 }))
 
 /** СК-42 для точки (для отображения в UI). */

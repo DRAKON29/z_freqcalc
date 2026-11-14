@@ -32,6 +32,7 @@ import { fresnelRadiusM } from '@/lib/radio/fresnel'
 import { buildExportPayload, toJson, toCsv, download } from '@/lib/radio/export'
 import { linkStatus, type LinkStatus } from '@/lib/radio/budget'
 import { availabilitySummary } from '@/lib/radio/availability'
+import { INTERFERENCE_IMPACT_LABELS } from '@/lib/radio/interference'
 import { auditClearance, type ClearanceVerdict } from '@/lib/radio/clearance'
 import { diffractionMethodsDb } from '@/lib/radio/diffraction'
 import { fmtSk42SevenDigits } from '@/lib/radio/optimal-point'
@@ -95,7 +96,7 @@ function rainSourceLabel(src: 'itu' | 'user' | 'zone' | null): string {
 
 export function ResultsPanel() {
   const s = useRadioStore()
-  const { result, budget, availability, comparison, lastInput, rangeResults, reverseResult, reverseBudget, reverseInput, reverseAvailability, reverseRangeResults, mobileFrequencyMhz, mobileFrequencyMode, terrainWarning, searchReport, searchProgress } = s
+  const { result, budget, availability, comparison, lastInput, rangeResults, reverseResult, reverseBudget, reverseInput, reverseAvailability, reverseRangeResults, mobileFrequencyMhz, mobileFrequencyMode, terrainWarning, searchReport, searchProgress, interferenceReport, reverseInterferenceReport } = s
 
   const profileData = useMemo(() => {
     if (!lastInput) return []
@@ -453,6 +454,121 @@ export function ResultsPanel() {
         </Card>
       )}
 
+      {/* Интерференция C/I (роадмап 2.3): P.452 путь помехи + защитные отношения */}
+      {interferenceReport && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex flex-wrap items-center justify-between gap-2">
+              Помехи (C/I, ITU-R P.452)
+              <Badge variant="outline" className="font-mono">{interferenceReport.engineUsed}</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                  interferenceReport.impact === 'none'
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                    : interferenceReport.impact === 'severe'
+                      ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300'
+                      : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                }`}
+              >
+                {INTERFERENCE_IMPACT_LABELS[interferenceReport.impact]}
+              </span>
+              <span
+                className={`text-sm font-medium ${
+                  interferenceReport.ciMet ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+                }`}
+              >
+                Защитное отношение {interferenceReport.ciMet ? 'выполнено' : 'НЕ выполнено'}:{' '}
+                C/I {interferenceReport.median.ciDb.toFixed(1)} дБ {interferenceReport.ciMet ? '≥' : '<'}{' '}
+                C/I_min {interferenceReport.ciMinDb.toFixed(1)} дБ
+              </span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-4">
+              <Card>
+                <CardContent className="pt-4">
+                  <p className="text-xs text-muted-foreground">Помеха I (медиана 50 %)</p>
+                  <p className="text-xl font-semibold">{interferenceReport.median.iDbm.toFixed(1)} <span className="text-sm">дБм</span></p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4">
+                  <p className="text-xs text-muted-foreground">Помеха / шум I/N</p>
+                  <p className="text-xl font-semibold">{interferenceReport.median.inDb.toFixed(1)} <span className="text-sm">дБ</span></p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4">
+                  <p className="text-xs text-muted-foreground">Деградация шума Δ</p>
+                  <p className="text-xl font-semibold">+{interferenceReport.median.degradationDb.toFixed(2)} <span className="text-sm">дБ</span></p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4">
+                  <p className="text-xs text-muted-foreground">Запас линии с помехой</p>
+                  <p className={`text-xl font-semibold ${interferenceReport.marginWithIDb >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {interferenceReport.marginWithIDb.toFixed(1)} <span className="text-sm">дБ</span>
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Процент времени</TableHead>
+                  <TableHead className="text-right">Потери пути помехи, дБ</TableHead>
+                  <TableHead className="text-right">I, дБм</TableHead>
+                  <TableHead className="text-right">I/N, дБ</TableHead>
+                  <TableHead className="text-right">C/I, дБ</TableHead>
+                  <TableHead className="text-right">C/(N+I), дБ</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[interferenceReport.median, interferenceReport.shortTerm].filter(Boolean).map((lvl) => (
+                  <TableRow key={lvl!.p}>
+                    <TableCell>{lvl!.p} %</TableCell>
+                    <TableCell className="text-right font-mono">{lvl!.pathLossDb.toFixed(1)}</TableCell>
+                    <TableCell className="text-right font-mono">{lvl!.iDbm.toFixed(1)}</TableCell>
+                    <TableCell className="text-right font-mono">{lvl!.inDb.toFixed(1)}</TableCell>
+                    <TableCell className="text-right font-mono">{lvl!.ciDb.toFixed(1)}</TableCell>
+                    <TableCell className="text-right font-mono">
+                      {(lvl!.ciDb - 10 * Math.log10(1 + Math.pow(10, lvl!.inDb / 10))).toFixed(1)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <details className="rounded-lg border p-3">
+              <summary className="cursor-pointer select-none text-sm font-medium">
+                Детали пути помехи
+              </summary>
+              <div className="mt-2 space-y-1.5 text-xs text-muted-foreground">
+                <p>
+                  Источник помехи: {interferenceReport.source.lat.toFixed(5)}, {interferenceReport.source.lon.toFixed(5)} ·
+                  путь до жертвы {interferenceReport.pathKm.toFixed(1)} км · EIRP помехи {interferenceReport.eirpDbm.toFixed(1)} дБм ·
+                  частота {interferenceReport.frequencyMhz.toFixed(0)} МГц
+                </p>
+                <p>
+                  Критерий C/I_min: {interferenceReport.ciMinDb.toFixed(1)} дБ ({interferenceReport.ciMinSource === 'user' ? 'задан пользователем' : 'по умолчанию = Eb/N0 приёмника — интерференция как шум'}).
+                  SNR с помехой C/(N+I): {interferenceReport.snrWithIDb.toFixed(1)} дБ.
+                </p>
+                {interferenceReport.warnings.map((w) => (
+                  <p key={w} className="text-amber-600 dark:text-amber-400">⚠ {w}</p>
+                ))}
+              </div>
+            </details>
+            <p className="text-xs text-muted-foreground">
+              Допущения: помеха ко-канальная (полное спектральное перекрытие) и складывается с шумом
+              как шум: C/(N+I) = SNR − Δ, Δ = 10lg(1 + I/N). Разнос антенн жертвы — по ширине луча
+              (угол между лучом на свой передатчик и направлением на помеху). Жертва прямой линии —
+              Rx в точке Б.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Поиск оптимальной позиции точки A: сворачиваемый блок, свёрнут — «найдено N оптимальных точек» */}
       {searchReport && (
         <details className="rounded-lg border p-3" open={!!searchProgress}>
@@ -706,6 +822,28 @@ export function ResultsPanel() {
               </div>
             </CardContent>
           </CardContent>
+          {reverseInterferenceReport && (
+            <CardContent className="pt-0">
+              <div className="border-t pt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                <span className="font-medium">Помеха в обратной линии:</span>
+                <span
+                  className={`font-semibold ${
+                    reverseInterferenceReport.ciMet
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-red-600 dark:text-red-400'
+                  }`}
+                >
+                  C/I {reverseInterferenceReport.median.ciDb.toFixed(1)} дБ (норма ≥{' '}
+                  {reverseInterferenceReport.ciMinDb.toFixed(1)})
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  I {reverseInterferenceReport.median.iDbm.toFixed(1)} дБм · I/N{' '}
+                  {reverseInterferenceReport.median.inDb.toFixed(1)} дБ · Δ +{reverseInterferenceReport.median.degradationDb.toFixed(2)} дБ —{' '}
+                  {INTERFERENCE_IMPACT_LABELS[reverseInterferenceReport.impact].toLowerCase()} (жертва — наземный Rx в точке A)
+                </span>
+              </div>
+            </CardContent>
+          )}
         </Card>
       ) : !(reverseRangeResults && reverseRangeResults.length > 0) ? (
         <p className="text-xs text-muted-foreground">
