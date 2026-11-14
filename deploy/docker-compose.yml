@@ -24,6 +24,8 @@ services:
       - ../data/srtm:/data/srtm
       - ../data/p452:/data/p452
       - ../data/p452_maps:/data/p452_maps
+      - ../data/p2001:/data/p2001
+      - ../data/p2001_maps:/data/p2001_maps
     ports:
       - "127.0.0.1:8000:8000"
 
