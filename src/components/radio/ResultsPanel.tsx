@@ -261,14 +261,11 @@ export function ResultsPanel() {
         </div>
       )}
 
-      {/* Условия из цифровых продуктов ITU-R P.2001-6 */}
+      {/* Данные из цифровых продуктов ITU-R P.2001-6 */}
       {lastInput?.environment && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center justify-between gap-2 flex-wrap">
-              Условия из цифровых продуктов ITU-R P.2001-6
-              <Badge variant="outline" className="font-mono">{lastInput.environment.usedProducts.length} продукта(ов)</Badge>
-            </CardTitle>
+            <CardTitle className="text-base">Данные из P.2001-6</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-4 text-sm">
@@ -311,11 +308,6 @@ export function ResultsPanel() {
               {lastInput.environment.foEs001 !== undefined && (
                 <div><p className="text-xs text-muted-foreground">foEs 0.1/1/10/50 % (Annex G)</p><p className="font-mono">{lastInput.environment.foEs001?.toFixed(1)} / {lastInput.environment.foEs01?.toFixed(1)} / {lastInput.environment.foEs10?.toFixed(1)} / {lastInput.environment.foEs50?.toFixed(1)} МГц</p></div>
               )}
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {lastInput.environment.usedProducts.map((f) => (
-                <Badge key={f} variant="secondary" className="font-mono text-xs">{f}</Badge>
-              ))}
             </div>
             <p className="text-xs text-muted-foreground">
               {lastInput.environment.pr6 !== undefined && 'Дождь из карт ITU: CCDF R(p) по P.837-6 (Pr6, Mt, β) — в хвосте распределения (p ≤ P0); медиана — без дождя. '}

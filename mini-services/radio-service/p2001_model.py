@@ -50,7 +50,7 @@ _BEST_MIN_KM, _BEST_MAX_KM = 3.0, 1000.0
 _POL_MAP = {"vertical": 1, "horizontal": 0}
 
 
-def calculate_full(inp: dict, engine_note: str = "py: P.2001-6 (Py2001)") -> dict:
+def calculate_full(inp: dict, engine_note: str = "P.2001-6(ITU-R WP 3M)") -> dict:
     """Полная P.2001-6 по профилю трассы и координатам концов.
 
     Бросает ValueError, если в input нет координат концов трассы

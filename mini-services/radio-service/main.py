@@ -267,7 +267,7 @@ async def api_calculate(request: Request):
         try:
             from p2001_model import calculate_full
             result = calculate_full(
-                inp, engine_note="py: P.2001-6 (Py2001, вендоренный порт ITU-R WP 3M)"
+                inp, engine_note="P.2001-6(ITU-R WP 3M)"
             )
         except Exception as e:
             result = p2001_calculate(inp, engine_note="py: P.2001-lite (fallback от Py2001)")
