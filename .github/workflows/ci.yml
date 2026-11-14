@@ -40,7 +40,7 @@ jobs:
           python -m pip install --upgrade pip
           # httpx2 — для fastapi TestClient (starlette 0.4x+, см. предупреждение testclient)
           pip install -r requirements.txt pytest httpx2
-      - name: Карты ITU для SG3-валидации (best-effort: itu.int может быть недоступен)
+      - name: Карты ITU для SG3-валидации (best-effort, itu.int может быть недоступен)
         run: |
           mkdir -p itu_dl/p2001 itu_dl/p452
           # P.2001-6 (14 таблиц) и P.452-18 (N050/DN50) — официальные ZIP-E с itu.int;
