@@ -187,6 +187,8 @@ def health():
         "version": "1.0.0",
         "py2001": _py2001_available(),
         "p452": _p452_available(),
+        "itm": _itm_available(),
+        "p528": _p528_available(),
         "maps": _maps_count(),
     }
 
@@ -221,6 +223,16 @@ def _itm_available() -> bool:
         return False
 
 
+def _p528_available() -> bool:
+    """P.528-5 (вендоренный порт PyP528, роадмап 3.5): чистый python-пакет,
+    недоступен только при повреждении установки — ожидаемо доступен."""
+    try:
+        import p528_port  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
 def _maps_count() -> int:
     return len(list(ITU_MAPS_DIR.glob("*")))
 
@@ -240,6 +252,12 @@ def capabilities():
         },
         "fspl-p526": {"available": True, "engine": "py: FSPL + P.526 + P.838/P.676/P.833"},
         "itm": {"available": _itm_available(), "engine": "py: Longley-Rice ITM v1.2.2 (порт NTIA/ITS, роадмап 2.1)"},
+        "p528": {
+            "available": _p528_available(),
+            "engine": "P.528-5 (PyP528, порт эталонной реализации NTIA, роадмап 3.5)"
+            if _p528_available()
+            else "недоступен",
+        },
         "p452": {
             "available": p452,
             "engine": "P.452-18 (Py452, вендоренный порт; карты N050/DN50)" if p452 else "недоступен: соберите P452.npz (scripts/build_p452_npz.py)",
@@ -281,6 +299,13 @@ async def api_calculate(request: Request):
             result = itm_calculate(inp, engine_note="py: Longley-Rice ITM v1.2.2 (медиана 50 % времени)")
         except Exception as e:
             raise HTTPException(400, f"ITM: не удалось выполнить расчёт ({e})")
+    elif model == "p528":
+        # P.528-5 (роадмап 3.5): вендоренный порт PyP528 (NTIA reference)
+        try:
+            from p528_model import calculate_full
+            result = calculate_full(inp, engine_note="P.528-5 (NTIA reference port)")
+        except Exception as e:
+            raise HTTPException(400, f"P.528: не удалось выполнить расчёт ({e})")
     else:
         # FSPL + P.526: тот же движок, модель детерминированная
         result = p2001_calculate(inp, engine_note="py: FSPL (P.525) + P.526")

@@ -1,0 +1,26 @@
+ATTRIBUTION AND SOURCES
+========================
+
+This software (PyP528) is a Python implementation of the mathematical
+model described in:
+
+    ITU-R P.528-5 — "A propagation prediction method for aeronautical mobile and radionavigation services using the VHF, UHF and SHF bands"
+    International Telecommunication Union, Radiocommunication Sector (ITU-R)
+    Geneva, Switzerland
+
+The ITU-R Recommendations are publicly available at:
+    https://www.itu.int/rec/R-REC-P.528-5/en
+
+The original reference implementation in C++ was published by the
+U.S. National Telecommunications and Information Administration (NTIA)
+and is available at:
+    https://github.com/NTIA/p528-5
+
+The Python port was created by:
+    Evgeny Gennadievich Prutkov <sviazist.pr@gmail.com>, 2026
+
+This software is provided under the MIT License (see LICENSE).
+
+The author of this port is not affiliated with ITU or NTIA. All
+formulas and algorithms are taken from the publicly available
+ITU-R Recommendations.

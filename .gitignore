@@ -78,3 +78,6 @@ mini-services/radio-service/data/p452/
 # P.2001-6 (роадмап 2.6): карты ITU (14 таблиц) и собранный npz — не распространяются
 mini-services/radio-service/data/p2001_maps/
 mini-services/radio-service/data/p2001/
+
+# P.528-5 (роадмап 3.5): эталонные таблицы ITU (ZIP-E) — не распространяются, скачиваются
+mini-services/radio-service/tests/p528_validation_examples/

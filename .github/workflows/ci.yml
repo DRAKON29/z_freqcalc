@@ -51,6 +51,8 @@ jobs:
           [ -f itu_dl/p452.zip ] && unzip -q -o itu_dl/p452.zip -d itu_dl/p452 || true
           P2001_FILE=$(find itu_dl/p2001 -name DN_Median.txt -print -quit || true)
           P452_FILE=$(find itu_dl/p452 -name N050.TXT -print -quit || true)
+          curl -fLsS --max-time 180 -o itu_dl/p528.zip "https://www.itu.int/dms_pubrec/itu-r/rec/p/R-REC-P.528-5-202109-I!!ZIP-E.zip" || echo "WARN: P.528-5 ZIP недоступен"
+          [ -f itu_dl/p528.zip ] && mkdir -p mini-services/radio-service/tests/p528_validation_examples && (unzip -q -o itu_dl/p528.zip "Data Tables/*" -d itu_dl/p528 && cp "itu_dl/p528/Data Tables/"*.csv mini-services/radio-service/tests/p528_validation_examples/) || echo "WARN: SG3-слой P.528 будет пропущен (нет таблиц)"
           if [ -n "$P2001_FILE" ]; then python scripts/build_p2001_npz.py --maps-dir "$(dirname "$P2001_FILE")"; else echo "WARN: SG3-слой P.2001 будет пропущен (нет карт)"; fi
           if [ -n "$P452_FILE" ]; then python scripts/build_p452_npz.py --maps-dir "$(dirname "$P452_FILE")"; else echo "WARN: SG3-слой P.452 будет пропущен (нет карт)"; fi
       - name: Тесты Python (формулы + API + SG3-эталоны при картах)

@@ -12,13 +12,16 @@ RUN pip install --no-cache-dir -r requirements.txt pillow
 COPY mini-services/radio-service/main.py .
 COPY mini-services/radio-service/p2001_lite.py .
 # Модели: Longley-Rice ITM (роадмап 2.1), P.452-18 (роадмап 2.3, p452_port —
-# каталог пакета) и полная P.2001-6 (роадмап 2.6, p2001_port — каталог пакета);
-# без них соответствующие модели недоступны в контейнере
+# каталог пакета), полная P.2001-6 (роадмап 2.6, p2001_port) и P.528-5
+# (роадмап 3.5, p528_port + спутники p676/p835) — без них соответствующие
+# модели недоступны в контейнере
 COPY mini-services/radio-service/itm_model.py .
 COPY mini-services/radio-service/itm_port.py .
 COPY mini-services/radio-service/p452_port/ ./p452_port/
 COPY mini-services/radio-service/p2001_model.py .
 COPY mini-services/radio-service/p2001_port/ ./p2001_port/
+COPY mini-services/radio-service/p528_model.py .
+COPY mini-services/radio-service/p528_port/ ./p528_port/
 COPY public/py/p2001_lite.py /srv/static/p2001_lite.py
 
 # Данные: карты ITU, clutter, история (том по ТЗ 6.1); p452/P452.npz и
