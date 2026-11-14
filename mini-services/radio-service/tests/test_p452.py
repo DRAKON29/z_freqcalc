@@ -229,10 +229,12 @@ def _load_profile_rows(path: Path):
 
 
 def _load_result_rows(path: Path):
+    """Заголовок official-файла содержит единицы ('f (GHz)', 'p (%)') —
+    ключи нормализуются к первому слову в нижнем регистре ('f', 'p', 'lb')."""
     with open(path, newline="", encoding="utf-8") as f:
         rows = list(csv.reader(f))
     header = rows[0]
-    idx = {name: i for i, name in enumerate(header)}
+    idx = {cell.split()[0].lower(): i for i, cell in enumerate(header) if cell.strip()}
     out = []
     for row in rows[1:]:
         if not row or len(row) < len(header):
@@ -247,9 +249,14 @@ class TestP452ValidationExamples:
 
     TOL_DB = 0.1  # практика SG3: |Δ| ≤ 0.1 дБ
 
-    def test_validation_examples(self, tmp_path, monkeypatch):
+    def test_validation_examples(self, monkeypatch):
+        # p452_port читает npz по env при импорте: направляем на РЕАЛЬНЫЙ npz
+        # (собранный из карт ITU) и сбрасываем кеш модулей — в этом процессе
+        # p452_port мог быть уже импортирован с синтетическим npz dispatch-тестов
+        monkeypatch.setenv("RADIO_P452_NPZ", str(REAL_NPZ))
+        for mod in ("p452_port", "p452_port.P452"):
+            sys.modules.pop(mod, None)
         pytest.importorskip("p452_port")
-        # npz уже собран из реальных карт: импортируем без перезагрузки env
         profiles = sorted((EX_DIR / "profiles").glob("*.csv"))
         assert profiles, "Нет эталонных профилей в tests/p452_validation_examples"
         checked = 0
@@ -265,13 +272,13 @@ class TestP452ValidationExamples:
             from p452_port import bt_loss
 
             for row in _load_result_rows(res_path):
-                expected = float(row["Lb"])
+                expected = float(row["lb"])
                 got = bt_loss(
                     float(row["f"]), float(row["p"]), d, h, g, zone,
                     float(row["htg"]), float(row["hrg"]),
                     float(row["phit_e"]), float(row["phit_n"]),
                     float(row["phir_e"]), float(row["phir_n"]),
-                    float(row["Gt"]), float(row["Gr"]),
+                    float(row["gt"]), float(row["gr"]),
                     int(float(row["pol"])), float(row["dct"]), float(row["dcr"]),
                     float(row["press"]), float(row["temp"]),
                 )
