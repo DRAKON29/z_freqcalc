@@ -109,3 +109,19 @@ test('fullscreen карты: разворот, клик по кнопке вну
   await page.evaluate(() => window.scrollTo(0, 0))
   await expect(page.locator('header')).toBeVisible()
 })
+
+test('покрытие на карте: автопоказ оверлея, тумблер, бейдж статистики (этап 2.5)', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Рассчитать', exact: true }).click()
+  await expect(page.getByText('173.0 дБ').first()).toBeVisible({ timeout: 20000 })
+  // автопоказ: геопривязанный канва-оверлей появился на карте
+  const overlay = page.locator('img.leaflet-image-layer.coverage-overlay-layer')
+  await expect(overlay).toBeVisible({ timeout: 15000 })
+  // бейдж статистики покрытия в тулбаре карты
+  await expect(page.getByText(/покрыто \d+ % · макс/).first()).toBeVisible()
+  // тумблер скрывает и возвращает слой
+  await page.getByRole('button', { name: /Покрытие на карте/ }).click()
+  await expect(overlay).toHaveCount(0)
+  await page.getByRole('button', { name: /Покрытие на карте/ }).click()
+  await expect(overlay).toBeVisible()
+})

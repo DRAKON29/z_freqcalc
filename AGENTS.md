@@ -46,14 +46,14 @@ NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000/api bun run dev
 ## Верификация (регресс)
 
 ```bash
-bun test tests/          # 160 тестов TS-ядра — должны быть зелёными
+bun test tests/          # 171 тест TS-ядра — должны быть зелёными
 bun run lint             # eslint — чисто
 cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q   # 68 тестов + 1 skip (эталонная валидация P.452 ждёт карты ITU)
 ```
 
 E2E (стек уже запущен: сервис :8000 + фронт :3000):
-`PLAYWRIGHT_CHANNEL=msedge bunx playwright test` (22 сценария: 6 — e2e/ux.spec.ts этап UX,
-1 — e2e/interference.spec.ts помехи C/I с проверкой фоллбека).
+`PLAYWRIGHT_CHANNEL=msedge bunx playwright test` (23 сценария: 6 — e2e/ux.spec.ts этап UX,
+1 — помехи C/I, 1 — покрытие на карте, + fullscreen/пресеты).
 
 Контрольные значения на дефолтных вводных (Москва A→Б, 2400 МГц, P.2001, http):
 медианные потери **173.0 дБ**, P_rx **−132.7 дБм**, margin **−31.3 дБ**
@@ -70,6 +70,18 @@ git log; **локальные коммиты (обзор конкурентов,
 (устарел относительно HEAD). Коммиты — conventional на русском, пушим в `dev_`.
 
 Реализовано (сверху вниз):
+- (этот коммит) **роадмап 2.5 — покрытие на карте**: computeCoverage сохраняет
+  уровни по контрольной сетке 72×60 (CoverageResult.levels, Float32Array, NaN за
+  границей в геометрических режимах); новый src/lib/radio/map-coverage.ts —
+  coverageBounds (плоская проекция 111320/cosLat), marginAt (билинейная
+  интерполяция с wrap по азимуту), coverageColorAt (4 зоны по margin,
+  согласованы с tri-color), renderCoverageOverlay (offscreen-canvas 512×512 →
+  toDataURL); CoveragePanel после расчёта строит оверлей и кладёт в store
+  (mapCoverage + автопоказ mapCoverageVisible=true); MapPanel — imageOverlay
+  (remove/create, opacity без пересоздания), тумблер «Покрытие на карте» +
+  слайдер непрозрачности + бейдж «покрыто N % · макс X км». Грабли: modes
+  geometry/fresnel не пишут margins (NaN — рендер по границам радиалов через
+  boundaryColorAt). Тесты: 171 TS (+11 coverage-map), 23 E2E (+1)
 - (этот коммит) **роадмап 2.3 — интерференция C/I (P.452 + P.372)**:
   вендоренный порт Py452 (ITU-R P.452-18, `mini-services/radio-service/p452_port/`,
   лицензия допускает вендоринг; изменения — загрузка npz из env RADIO_P452_NPZ
@@ -264,6 +276,7 @@ git log; **локальные коммиты (обзор конкурентов,
 | `src/lib/radio/presets.ts` | пользовательские пресеты оборудования (этап UX.2): localStorage `radio-presets`, merge/replace, JSON-файл v1 |
 | `src/lib/radio/mesh.ts` | mesh-заготовка (этап UX.6): типы MeshLink/MeshChain + `evaluateMeshChain` (бросает исключение; п. 2.4 ROADMAP заморожен) |
 | `src/lib/radio/interference.ts` | интерференция C/I (роадмап 2.3): клиент /api/interference + фоллбек P.2001-lite, чистые `buildInterferenceReport`/`interferenceLevel`/`discriminationAngleDeg`/`interferenceImpact` |
+| `src/lib/radio/map-coverage.ts` | покрытие на карте (этап 2.5): coverageBounds/marginAt/coverageColorAt/renderCoverageOverlay — канва-оверлей уровней |
 | `mini-services/radio-service/p452_port/` | вендоренный порт Py452 (ITU-R P.452-18, лицензия в LICENSE); npz из env RADIO_P452_NPZ; карты ITU не распространяются (scripts/build_p452_npz.py) |
 | `mini-services/radio-service/reports.py` | python-зеркало availability + clearance (эталонные формулы, pytest) |
 | `mini-services/radio-service/itm_port.py` + `itm_model.py` | вендоренный ITM v1.2.2 + адаптер модели 'itm' (pytest test_itm.py) |

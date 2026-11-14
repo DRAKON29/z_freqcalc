@@ -31,6 +31,7 @@ import {
   type InterferencePathPayload,
 } from '@/lib/radio/interference'
 import type { CoverageMode } from '@/lib/radio/coverage'
+import type { MapCoverageOverlay } from '@/lib/radio/map-coverage'
 import type { InterferenceReport } from '@/lib/radio/types'
 import type { ShareState } from '@/lib/radio/share'
 import { loadPresets, makePreset, mergePresets, replacePresets, savePresets, type EquipmentPreset } from '@/lib/radio/presets'
@@ -158,6 +159,14 @@ export interface RadioState {
 
   /** Режим преград кругового покрытия (этап UX.3): модель / FSPL / геометрия / Френель */
   coverageMode: CoverageMode
+
+  // Покрытие на карте (этап 2.5): геопривязанный канва-оверлей
+  /** Готовый оверлей (строит CoveragePanel после расчёта) */
+  mapCoverage: MapCoverageOverlay | null
+  /** Слой включён (автопоказ после расчёта, тумблер в тулбаре карты) */
+  mapCoverageVisible: boolean
+  /** Непрозрачность оверлея, 0.2–1 */
+  mapCoverageOpacity: number
 
   // Пользовательские пресеты оборудования (этап UX.2, localStorage)
   presets: EquipmentPreset[]
@@ -302,6 +311,11 @@ export const useRadioStore = create<RadioState>((set, get) => ({
   backendAvailable: null,
 
   coverageMode: 'model',
+
+  // Покрытие на карте (этап 2.5)
+  mapCoverage: null,
+  mapCoverageVisible: false,
+  mapCoverageOpacity: 0.55,
 
   presets: loadPresets(),
 
@@ -1065,7 +1079,7 @@ export const useRadioStore = create<RadioState>((set, get) => ({
     }
   },
 
-  resetResults: () => set({ result: null, budget: null, availability: null, comparison: null, reverseResult: null, reverseBudget: null, reverseInput: null, reverseAvailability: null, reverseRangeResults: null, rangeResults: null, searchReport: null, searchProgress: null, interferenceReport: null, reverseInterferenceReport: null, dynamics: null, dynamicsAll: [], dynamicsProgress: null, lastError: null }),
+  resetResults: () => set({ result: null, budget: null, availability: null, comparison: null, reverseResult: null, reverseBudget: null, reverseInput: null, reverseAvailability: null, reverseRangeResults: null, rangeResults: null, searchReport: null, searchProgress: null, interferenceReport: null, reverseInterferenceReport: null, mapCoverage: null, dynamics: null, dynamicsAll: [], dynamicsProgress: null, lastError: null }),
 }))
 
 /** СК-42 для точки (для отображения в UI). */

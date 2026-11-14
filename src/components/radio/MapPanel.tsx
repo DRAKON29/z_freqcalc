@@ -17,6 +17,7 @@ import { auditClearance } from '@/lib/radio/clearance'
 import { FPS_THRESHOLD } from '@/lib/radio/constants'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Slider } from '@/components/ui/slider'
 import { Maximize2, Minimize2 } from 'lucide-react'
 
 type MapStyle = 'scheme' | 'satellite' | 'hybrid'
@@ -55,6 +56,7 @@ export function MapPanel() {
   const baseLayerRef = useRef<LType.TileLayer | null>(null)
   const overlayLayerRef = useRef<LType.TileLayer | null>(null)
   const tilesLayerRef = useRef<LType.LayerGroup | null>(null)
+  const coverageOverlayRef = useRef<LType.ImageOverlay | null>(null)
   /** Вид карты на момент переключения полноэкранного режима — для восстановления */
   const viewRef = useRef<{ center: LType.LatLng; zoom: number } | null>(null)
   const fsBtnRef = useRef<HTMLButtonElement | null>(null)
@@ -82,6 +84,9 @@ export function MapPanel() {
   const lastInput = useRadioStore((s) => s.lastInput)
   const interferenceEnabled = useRadioStore((s) => s.interferenceEnabled)
   const interferenceSource = useRadioStore((s) => s.interferenceSource)
+  const mapCoverage = useRadioStore((s) => s.mapCoverage)
+  const mapCoverageVisible = useRadioStore((s) => s.mapCoverageVisible)
+  const mapCoverageOpacity = useRadioStore((s) => s.mapCoverageOpacity)
   const setField = useRadioStore((s) => s.setField)
 
   // Класс трассы (clearance-аудит): бейдж light/heavy в тулбаре карты
@@ -276,6 +281,34 @@ export function MapPanel() {
     // fitBounds траектории (эффект ниже) при перемонтировании вкладки.
     map.fitBounds(lineRef.current.getBounds(), { padding: [50, 50], maxZoom: 15, animate: false })
   }, [pointA, pointB, L, setPointA, setPointB])
+
+  // Покрытие на карте (этап 2.5): геопривязанный канва-оверлей уровней из
+  // computeCoverage (строит CoveragePanel в store). remove/create по образцу
+  // эффекта зоны — imageOverlay поверх тайлов, под маркерами
+  useEffect(() => {
+    const leaflet = LRef.current
+    const map = mapRef.current
+    if (!leaflet || !map) return
+    coverageOverlayRef.current?.remove()
+    coverageOverlayRef.current = null
+    if (!mapCoverage || !mapCoverageVisible) return
+    const bounds = leaflet.latLngBounds(
+      [mapCoverage.bounds.sw.lat, mapCoverage.bounds.sw.lon],
+      [mapCoverage.bounds.ne.lat, mapCoverage.bounds.ne.lon],
+    )
+    coverageOverlayRef.current = leaflet
+      .imageOverlay(mapCoverage.dataUrl, bounds, {
+        opacity: mapCoverageOpacity,
+        interactive: false,
+        className: 'coverage-overlay-layer',
+      })
+      .addTo(map)
+  }, [mapCoverage, mapCoverageVisible, mapCoverageOpacity, L])
+
+  // Непрозрачность — без пересоздания слоя
+  useEffect(() => {
+    coverageOverlayRef.current?.setOpacity(mapCoverageOpacity)
+  }, [mapCoverageOpacity])
 
   // Маркер источника помехи (роадмап 2.3): персистентный, перетаскиваемый
   useEffect(() => {
@@ -481,6 +514,35 @@ export function MapPanel() {
           >
             Границы тайлов рельефа
           </Button>
+        )}
+        {mapCoverage && (
+          <>
+            <Button
+              size="sm"
+              variant={mapCoverageVisible ? 'default' : 'outline'}
+              onClick={() => setField('mapCoverageVisible', !mapCoverageVisible)}
+              title="Уровни сигнала из круговой диаграммы, наложенные на карту"
+            >
+              Покрытие на карте
+            </Button>
+            {mapCoverageVisible && (
+              <div className="flex items-center gap-2">
+                <Slider
+                  value={[mapCoverageOpacity]}
+                  min={0.2}
+                  max={1}
+                  step={0.05}
+                  onValueChange={(v) => setField('mapCoverageOpacity', v[0] ?? 0.55)}
+                  className="w-24"
+                  aria-label="Непрозрачность покрытия"
+                />
+                <Badge variant="outline" className="text-[10px] font-mono whitespace-normal max-w-full">
+                  покрыто {mapCoverage.stats.areaPercent.toFixed(0)} % · макс{' '}
+                  {mapCoverage.stats.maxKm !== null ? `${mapCoverage.stats.maxKm.toFixed(0)} км` : '—'}
+                </Badge>
+              </div>
+            )}
+          </>
         )}
         {dynamics && animationAllowed === true && (
           <Badge className="bg-emerald-600">Анимация: FPS {fpsMeasured ?? '…'} ≥ {FPS_THRESHOLD}</Badge>

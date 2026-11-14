@@ -29,6 +29,7 @@ import {
   type ElevationGrid,
 } from '@/lib/radio/coverage'
 import { createHgtDem, createSyntheticDem, makeClutterSampler } from '@/lib/radio/terrain'
+import { coverageBounds, renderCoverageOverlay } from '@/lib/radio/map-coverage'
 
 /**
  * Режимы преград (этап UX.3, референс antenna.2tg.dev): честные подписи —
@@ -87,6 +88,26 @@ export function CoveragePanel() {
         const coverage = computeCoverage({ input: lastInput, dem, clutterAt, equipment, radiusKm, hgtTiles, mode: coverageMode })
         const grid = sampleElevationGrid(dem, lastInput.path.points[0], radiusKm * 1000, 160, hgtTiles.length > 0)
         if (!cancelled) setData({ coverage, grid })
+        // Покрытие на карте (этап 2.5): геопривязанный канва-оверлей в store
+        if (!cancelled) {
+          try {
+            const dataUrl = renderCoverageOverlay(coverage, lastInput.path.points[0], coverageMode)
+            if (dataUrl) {
+              setField('mapCoverage', {
+                dataUrl,
+                bounds: coverageBounds(lastInput.path.points[0], radiusKm * 1000),
+                stats: coverage.stats,
+                radiusKm: coverage.radiusKm,
+                frequencyMhz: coverage.frequencyMhz,
+                mode: coverageMode,
+                engineUsed: coverage.engineUsed,
+              })
+              setField('mapCoverageVisible', true) // автопосле расчёта
+            }
+          } catch {
+            // оверлей — не критичный путь
+          }
+        }
       } catch {
         // построение диаграммы не должно ломать панель результатов
       } finally {

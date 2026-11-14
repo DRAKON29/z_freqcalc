@@ -94,6 +94,21 @@ export interface CoverageRadial {
   strongKm: number | null
 }
 
+/**
+ * Уровни сигнала по контрольной сетке (этап 2.5, покрытие на карте):
+ * margins[azIdx * distCount + distIdx] — link margin (дБ) тест-точки
+ * (NaN — точка не считалась: геометрический режим оборвался на блоке).
+ * distKm — равномерная сетка дальностей (radiusKm * k / distCount).
+ */
+export interface CoverageLevels {
+  /** Дальности контрольных точек, км (длина distCount) */
+  distKm: number[]
+  /** Число азимутов */
+  azCount: number
+  /** Плоская матрица уровней: azIdx * distCount + distIdx */
+  margins: Float32Array
+}
+
 export interface CoverageStats {
   /** Доля азимутов с наличием связи, % */
   coveredAzimuthPercent: number
@@ -115,6 +130,8 @@ export interface CoverageResult {
   azimuthStepDeg: number
   radials: CoverageRadial[]
   stats: CoverageStats
+  /** Уровни по контрольной сетке (этап 2.5) — для оверлея на карте */
+  levels: CoverageLevels
   frequencyMhz: number
   routeKm: number
   routeAzDeg: number
@@ -230,6 +247,15 @@ export function computeCoverage({
   const geometricThreshold = mode === 'geometry' ? 0 : FRESNEL_CRITERION
   const kEff = input.environment?.k50 ?? input.kFactor
 
+  // Уровни по контрольной сетке (этап 2.5): margins[azIdx * distCount + distIdx],
+  // NaN — точка не считалась (геометрический режим оборвался на блоке)
+  const azCount = Math.round(360 / step)
+  const nTests = 60
+  const distKm: number[] = []
+  for (let k = 1; k <= nTests; k++) distKm.push((radius * k) / nTests)
+  const margins = new Float32Array(azCount * nTests)
+  margins.fill(NaN)
+
   const radials: CoverageRadial[] = []
   let insideTiles = 0
   let totalTestPoints = 0
@@ -238,9 +264,8 @@ export function computeCoverage({
     const edge = destination(center, radiusM, az)
     const profile = buildProfile(center, edge, dem, clutterAt)
     const radial: CoverageRadial = { azDeg: az, maxKm: null, marginAtMaxDb: null, strongKm: null }
+    const azIdx = Math.round(az / step)
 
-    // Контрольные дальности: ~60 по радиусу (гранулярность границы ≈ R/60)
-    const nTests = 60
     let strongBroken = false
     for (let k = 1; k <= nTests; k++) {
       const d = (radiusM * k) / nTests
@@ -286,6 +311,7 @@ export function computeCoverage({
       const prop = computeFsplP526(testInput, mode === 'fspl' ? { skipDiffraction: true } : undefined)
       const budget = computeLinkBudget(testInput, equipment, prop)
       const margin = budget.linkMarginDb
+      margins[azIdx * nTests + (k - 1)] = margin
       const dKm = d / 1000
       if (margin >= 0) {
         radial.maxKm = dKm
@@ -328,6 +354,7 @@ export function computeCoverage({
     azimuthStepDeg: step,
     radials,
     stats,
+    levels: { distKm, azCount, margins },
     frequencyMhz: input.frequencyMhz,
     routeKm: input.path.distanceM / 1000,
     routeAzDeg: input.path.azimuthDeg,
