@@ -11,16 +11,19 @@ RUN pip install --no-cache-dir -r requirements.txt pillow
 # Код сервиса
 COPY mini-services/radio-service/main.py .
 COPY mini-services/radio-service/p2001_lite.py .
-# Модели: Longley-Rice ITM (роадмап 2.1) и P.452-18 (роадмап 2.3, p452_port —
-# каталог пакета); без них /api/calculate itm и /api/interference недоступны
+# Модели: Longley-Rice ITM (роадмап 2.1), P.452-18 (роадмап 2.3, p452_port —
+# каталог пакета) и полная P.2001-6 (роадмап 2.6, p2001_port — каталог пакета);
+# без них соответствующие модели недоступны в контейнере
 COPY mini-services/radio-service/itm_model.py .
 COPY mini-services/radio-service/itm_port.py .
 COPY mini-services/radio-service/p452_port/ ./p452_port/
+COPY mini-services/radio-service/p2001_model.py .
+COPY mini-services/radio-service/p2001_port/ ./p2001_port/
 COPY public/py/p2001_lite.py /srv/static/p2001_lite.py
 
-# Данные: карты ITU, clutter, история (том по ТЗ 6.1); p452/P452.npz
-# монтируется с хоста (карты ITU не распространяются с образом)
-RUN mkdir -p /data/itu_maps /data/clutter /data/history /data/p452 /data/p452_maps
+# Данные: карты ITU, clutter, история (том по ТЗ 6.1); p452/P452.npz и
+# p2001/P2001.npz монтируются с хоста (карты ITU не распространяются с образом)
+RUN mkdir -p /data/itu_maps /data/clutter /data/history /data/p452 /data/p452_maps /data/p2001 /data/p2001_maps
 ENV RADIO_DATA_DIR=/data
 
 EXPOSE 8000
