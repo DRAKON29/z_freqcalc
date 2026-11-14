@@ -70,3 +70,7 @@ mini-services/radio-service/data/itu_maps/*
 /e2e-report/
 playwright-report/
 mini-services/radio-service/data/srtm/
+
+# P.452 (роадмап 2.3): карты ITU и собранный npz — не распространяются
+mini-services/radio-service/data/p452_maps/
+mini-services/radio-service/data/p452/

@@ -49,9 +49,14 @@ ITU_MAPS_DIR = DATA_DIR / "itu_maps"
 CLUTTER_FILE = DATA_DIR / "clutter" / "clutter.geojson"
 HISTORY_DB = DATA_DIR / "history" / "history.db"
 SRTM_DIR = DATA_DIR / "srtm"
+P452_MAPS_DIR = DATA_DIR / "p452_maps"
+P452_NPZ = DATA_DIR / "p452" / "P452.npz"
 
-for d in [ITU_MAPS_DIR, CLUTTER_FILE.parent, HISTORY_DB.parent, SRTM_DIR]:
+for d in [ITU_MAPS_DIR, CLUTTER_FILE.parent, HISTORY_DB.parent, SRTM_DIR, P452_MAPS_DIR, P452_NPZ.parent]:
     d.mkdir(parents=True, exist_ok=True)
+
+# Вендоренный P.452 (p452_port) читает P452.npz по этому пути при импорте
+os.environ.setdefault("RADIO_P452_NPZ", str(P452_NPZ))
 
 MAX_FILE_BYTES = 700 * 1024 * 1024   # 700 МБ на файл
 MAX_ZIP_BYTES = 1024 * 1024 * 1024   # 1 ГБ на zip
@@ -177,6 +182,7 @@ def health():
         "status": "ok",
         "version": "1.0.0",
         "py2001": _py2001_available(),
+        "p452": _p452_available(),
         "maps": _maps_count(),
     }
 
@@ -189,6 +195,17 @@ def _py2001_available() -> bool:
         return False
 
 
+def _p452_available() -> bool:
+    """P.452-18 (вендоренный порт Py452): импорт падает без P452.npz
+    (цифровые карты ITU не распространяются с репозиторием) — это
+    ожидаемое состояние «недоступен», клиент уходит в TS-фоллбек."""
+    try:
+        import p452_port  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
 def _maps_count() -> int:
     return len(list(ITU_MAPS_DIR.glob("*")))
 
@@ -196,6 +213,7 @@ def _maps_count() -> int:
 @app.get("/api/capabilities")
 def capabilities():
     p2001 = _py2001_available()
+    p452 = _p452_available()
     return {
         "p2001": {
             "available": True,
@@ -205,6 +223,10 @@ def capabilities():
         },
         "fspl-p526": {"available": True, "engine": "py: FSPL + P.526 + P.838/P.676/P.833"},
         "itm": {"available": True, "engine": "py: Longley-Rice ITM v1.2.2 (порт NTIA/ITS, роадмап 2.1)"},
+        "p452": {
+            "available": p452,
+            "engine": "P.452-18 (Py452, вендоренный порт; карты N050/DN50)" if p452 else "недоступен: соберите P452.npz (scripts/build_p452_npz.py)",
+        },
     }
 
 
@@ -255,6 +277,97 @@ async def api_calculate(request: Request):
         dop = float(body.get("dopplerLossDb") or 0)
         budget = compute_budget(inp, equipment, result, dop)
     return {"propagation": result, "budget": budget}
+
+
+@app.post("/api/interference")
+async def interference_post(request: Request):
+    """Путь помехи по ITU-R P.452-18 (роадмап 2.3): для каждого пути (источник
+    помехи → жертва) и каждого процента времени p считает базовые потери
+    bt_loss по готовому профилю от клиента. Модель полезной линии не трогает —
+    вызывается клиентом отдельно от /api/calculate."""
+    rate_limit(request, RATE_LIMIT_CALC, "calc")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Некорректный JSON")
+
+    if not _p452_available():
+        raise HTTPException(
+            400,
+            "P.452 недоступен: вендоренный порт Py452 не загрузился — "
+            "соберите P452.npz (scripts/build_p452_npz.py; карты N050.TXT/DN50.TXT "
+            "скачиваются с сайта ITU, см. scripts/download_p452_maps.ps1)",
+        )
+
+    paths = body.get("paths")
+    if not isinstance(paths, list) or not paths:
+        raise HTTPException(400, "Отсутствуют paths (пути помехи)")
+    freq = float(body.get("frequencyMhz", 0))
+    if not (500 <= freq <= 7000):
+        raise HTTPException(422, f"Частота {freq} МГц вне диапазона 500–7000 МГц")
+    pol_code = 1 if (body.get("polarization") or "vertical") == "horizontal" else 2
+    zone = body.get("zone", 2)
+    if zone not in (1, 2, 3):
+        raise HTTPException(422, f"Радиоклиматическая зона {zone} вне 1/2/3")
+    press = float(body.get("pressHPa", 1013))
+    temp = float(body.get("tempC", 15))
+    ps_raw = body.get("p", [50])
+    if not isinstance(ps_raw, list) or not ps_raw:
+        raise HTTPException(400, "Отсутствует p (список процентов времени)")
+    ps = [float(x) for x in ps_raw]
+    if any(not (0.001 <= x <= 50) for x in ps):
+        raise HTTPException(422, "Проценты времени p вне диапазона 0.001–50 %")
+
+    try:
+        import numpy as np
+        from p452_port import bt_loss
+
+        results: dict[str, dict[str, float]] = {}
+        for path in paths:
+            pid = str(path.get("id", "path"))
+            prof = path.get("profile") or {}
+            d_arr, h_arr, g_arr = prof.get("d"), prof.get("h"), prof.get("g")
+            if not (isinstance(d_arr, list) and isinstance(h_arr, list) and isinstance(g_arr, list)):
+                raise HTTPException(422, f"Путь {pid}: profile.d/h/g — массивы")
+            if len(d_arr) < 4:
+                raise HTTPException(422, f"Путь {pid}: P.452 требует минимум 4 точки профиля")
+            if not (len(d_arr) == len(h_arr) == len(g_arr)):
+                raise HTTPException(422, f"Путь {pid}: длины d/h/g не совпадают")
+            htg = float(path.get("txHeightM", 0))
+            hrg = float(path.get("rxHeightM", 0))
+            if not (0.5 <= htg <= 5000 and 0.5 <= hrg <= 5000):
+                raise HTTPException(422, f"Путь {pid}: высоты антенн вне диапазона 0.5–5000 м")
+            src = path.get("source") or {}
+            vic = path.get("victim") or {}
+            try:
+                phit_e, phit_n = float(src["lon"]), float(src["lat"])
+                phir_e, phir_n = float(vic["lon"]), float(vic["lat"])
+            except (KeyError, TypeError, ValueError):
+                raise HTTPException(400, f"Путь {pid}: некорректные координаты source/victim")
+
+            d_km = np.asarray(d_arr, dtype=float) / 1000.0
+            if np.any(np.diff(d_km) < 0):
+                raise HTTPException(422, f"Путь {pid}: профиль d должен быть возрастающим")
+            h_m = np.asarray(h_arr, dtype=float)
+            g_m = np.asarray(g_arr, dtype=float)
+            zone_arr = np.full(len(d_km), int(zone))
+
+            entry: dict[str, float] = {}
+            for p in ps:
+                loss = bt_loss(
+                    freq / 1000.0, p, d_km, h_m, g_m, zone_arr, htg, hrg,
+                    phit_e, phit_n, phir_e, phir_n,
+                    0, 0,          # Gt/Gr: усиления жертв/помехи применяются на клиенте
+                    pol_code, 0, 0,  # dct/dcr: внутренние трассы, без выхода к морю
+                    press, temp,
+                )
+                entry[f"{p:g}"] = float(loss)
+            results[pid] = entry
+        return {"results": results, "engineUsed": "P.452-18 (Py452, вендоренный порт)", "warnings": []}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(400, f"P.452: не удалось выполнить расчёт ({e})")
 
 
 def _validate_input(inp: dict) -> None:
