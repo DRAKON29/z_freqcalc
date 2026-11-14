@@ -46,14 +46,14 @@ NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000/api bun run dev
 ## Верификация (регресс)
 
 ```bash
-bun test tests/          # 150 тестов TS-ядра — должны быть зелёными
+bun test tests/          # 160 тестов TS-ядра — должны быть зелёными
 bun run lint             # eslint — чисто
-cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q   # 61 тест формул и API
+cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q   # 68 тестов + 1 skip (эталонная валидация P.452 ждёт карты ITU)
 ```
 
 E2E (стек уже запущен: сервис :8000 + фронт :3000):
-`PLAYWRIGHT_CHANNEL=msedge bunx playwright test` (21 сценарий; 6 из них — e2e/ux.spec.ts:
-share-ссылка, пресеты, режимы преград, fullscreen).
+`PLAYWRIGHT_CHANNEL=msedge bunx playwright test` (22 сценария: 6 — e2e/ux.spec.ts этап UX,
+1 — e2e/interference.spec.ts помехи C/I с проверкой фоллбека).
 
 Контрольные значения на дефолтных вводных (Москва A→Б, 2400 МГц, P.2001, http):
 медианные потери **173.0 дБ**, P_rx **−132.7 дБм**, margin **−31.3 дБ**
@@ -70,7 +70,29 @@ git log; **локальные коммиты (обзор конкурентов,
 (устарел относительно HEAD). Коммиты — conventional на русском, пушим в `dev_`.
 
 Реализовано (сверху вниз):
-- (этот коммит) **этап UX (UX.1–UX.6, референс antenna.2tg.dev, тег `допфункционал` — точка отсчёта)**:
+- (этот коммит) **роадмап 2.3 — интерференция C/I (P.452 + P.372)**:
+  вендоренный порт Py452 (ITU-R P.452-18, `mini-services/radio-service/p452_port/`,
+  лицензия допускает вендоринг; изменения — загрузка npz из env RADIO_P452_NPZ
+  = `<DATA_DIR>/p452/P452.npz`, переименование пакета; карты N050/DN50 не
+  распространяются — `scripts/download_p452_maps.ps1` + `scripts/build_p452_npz.py`,
+  без npz импорт падает = «P.452 недоступен»); `POST /api/interference` (пути с
+  готовыми профилями от клиента, p=[50,1], зона 1/2/3, Gt/Gr=0 — усиления на клиенте;
+  ключ p452 в capabilities/health); TS `src/lib/radio/interference.ts`:
+  `computeInterferencePathLosses` (http + честный фоллбек P.2001-lite медианой 50 %
+  с предупреждением), чистые `buildInterferenceReport`/`interferenceLevel`/
+  `discriminationAngleDeg`/`interferenceImpact` — I = EIRP_пом − L_P452 + G_жертвы −
+  pointingLoss(угол луч/помеха), I/N, C/I vs C/I_min (дефолт = Eb/N0 приёмника),
+  C/(N+I) = SNR − Δ, Δ = 10lg(1+I/N), классы влияния <0.5/<1/<3 дБ; store: поля
+  interference* + расчёт в calculate() после бюджетов (подкачка тайлов путей помехи,
+  жертвы: Rx в точке Б — прямая, Rx в точке A — обратная, антенна жертвы eq.rx/eq.tx);
+  UI: чекбокс + CoordEditor('C') + поля в «Трассе», режим клика «Клик → помеха» +
+  перетаскиваемый красный маркер C, карточка «Помехи (C/I, ITU-R P.452)» с таблицей
+  50 %/1 % и `<details>` деталей + компактный блок в обратной линии. pytest
+  test_p452.py: dispatch на синтетическом npz (121×241 константы, CI всегда) +
+  эталонная валидация SG3 (skip без реальных карт, tol ±0.1 дБ). Грабли: селектор
+  zustand с inline-стрелкой для 'C' давал бесконечный ре-рендер (getSnapshot
+  некэшируем) — пишется через setField вне селектора. Тесты: 160 TS (+10), 22 E2E (+1)
+- `8e1fd39`+`cd32c54` **этап UX (UX.1–UX.6, референс antenna.2tg.dev, тег `допфункционал` — точка отсчёта)**:
   UX.1 share-ссылка (`src/lib/radio/share.ts` — encode/decode URL-hash с zod-валидацией,
   tolerant; кнопка «Поделиться» в page.tsx, clipboard+toast; декод на монте + autorun `run=1`;
   store-действие `applyShareState`; НЕ сериализуются карты/тайлы/clutter/маршрут);
@@ -201,9 +223,13 @@ git log; **локальные коммиты (обзор конкурентов,
    в историю/PDF/экспорты. (Рельеф per-sample, ДН по углу места и 0–300 км/ч
    реализованы в 2.2.)
 4. **P.528** не реализована (решение по ТЗ 9.3: подключать только если сравнительные
-   тесты дадут >5% выигрыша; точка интеграции — пакет p528 в http-режиме).
+   тесты дадут >5% выигрыш; точка интеграции — пакет p528 в http-режиме).
 5. `MapPanel`/ResultsPanel не показывают обратную линию на карте/профиле (только сводка и бюджет).
 6. История коммитов до `cd527bf` содержит GUID-имена и merge-мусор — не переписывать (запушено).
+7. **Помеха C/I (2.3) не попадает** в историю (IndexedDB/сервер) и PDF/JSON/CSV —
+   только карточка результатов. Допущения помехи: ко-канальная (полное спектральное
+   перекрытие), интерференция как шум. Эталонная валидация P.452 (pytest) выполняется
+   только при собранном P452.npz из реальных карт ITU (в CI — skip).
 
 ## Заметки по автоматизации UI (браузерные проверки)
 
@@ -237,6 +263,8 @@ git log; **локальные коммиты (обзор конкурентов,
 | `src/lib/radio/share.ts` | share-ссылка (этап UX.1): encode/decode URL-hash входных параметров (zod, tolerant), base64url equipment |
 | `src/lib/radio/presets.ts` | пользовательские пресеты оборудования (этап UX.2): localStorage `radio-presets`, merge/replace, JSON-файл v1 |
 | `src/lib/radio/mesh.ts` | mesh-заготовка (этап UX.6): типы MeshLink/MeshChain + `evaluateMeshChain` (бросает исключение; п. 2.4 ROADMAP заморожен) |
+| `src/lib/radio/interference.ts` | интерференция C/I (роадмап 2.3): клиент /api/interference + фоллбек P.2001-lite, чистые `buildInterferenceReport`/`interferenceLevel`/`discriminationAngleDeg`/`interferenceImpact` |
+| `mini-services/radio-service/p452_port/` | вендоренный порт Py452 (ITU-R P.452-18, лицензия в LICENSE); npz из env RADIO_P452_NPZ; карты ITU не распространяются (scripts/build_p452_npz.py) |
 | `mini-services/radio-service/reports.py` | python-зеркало availability + clearance (эталонные формулы, pytest) |
 | `mini-services/radio-service/itm_port.py` + `itm_model.py` | вендоренный ITM v1.2.2 + адаптер модели 'itm' (pytest test_itm.py) |
 | `src/lib/radio/route.ts` | файл траектории: `parseRouteFile` (JSON → zod), сегментация с кэшем (WeakMap), `routeStateAt(route, t)` — позиция/высота/скорость/вертикальная скорость в момент t, `routeDurationS` |
