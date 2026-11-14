@@ -1,6 +1,12 @@
 /** E2E: основной расчёт на дефолтной трассе — контрольные значения бюджета. */
 import { expect, test } from '@playwright/test'
 
+// Контрольные значения дефолтной трассы зависят от движка http-модели P.2001
+// (роадмап 2.6): при собранном P2001.npz (карты ITU; локально и на проде)
+// работает полная P.2001-6 (Py2001) — медиана 183.4 дБ, P_rx −143.1 дБм,
+// запас −41.7 дБ; без карт (CI) — P.2001-lite: 173.0 дБ, −132.7 дБм, −31.3 дБ.
+const MEDIAN_DB = /173\.0|183\.4 дБ/
+
 test('расчёт по умолчанию даёт контрольные значения (Москва, 2400 МГц, P.2001)', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: /Калькулятор распространения радиоволн/ })).toBeVisible()
@@ -9,9 +15,9 @@ test('расчёт по умолчанию даёт контрольные зн�
 
   // Медианные потери и бюджет: контрольные значения включают потери наведения 2×1.3 дБ (луч 30°)
   // (число может дублироваться в таблице бюджета — берём первое вхождение)
-  await expect(page.getByText('173.0 дБ').first()).toBeVisible({ timeout: 20000 })
-  await expect(page.getByText(/-132\.7 дБм|−132\.7 дБм/).first()).toBeVisible()
-  await expect(page.getByText(/-31\.3 дБ|−31\.3 дБ/).first()).toBeVisible()
+  await expect(page.getByText(MEDIAN_DB).first()).toBeVisible({ timeout: 20000 })
+  await expect(page.getByText(/-132\.7 дБм|−132\.7 дБм|-143\.1 дБм|−143\.1 дБм/).first()).toBeVisible()
+  await expect(page.getByText(/-31\.3 дБ|−31\.3 дБ|-41\.7 дБ|−41\.7 дБ/).first()).toBeVisible()
   // Статус связи (трёхцветная индикация)
   await expect(page.getByText(/Связь (стабильна|нестабильна|отсутствует)/).first()).toBeVisible()
 })
@@ -19,14 +25,14 @@ test('расчёт по умолчанию даёт контрольные зн�
 test('обратная линия присутствует в результатах', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Рассчитать', exact: true }).click()
-  await expect(page.getByText('173.0 дБ').first()).toBeVisible({ timeout: 20000 })
+  await expect(page.getByText(MEDIAN_DB).first()).toBeVisible({ timeout: 20000 })
   await expect(page.getByText(/Обратная линия/).first()).toBeVisible()
 })
 
 test('availability-отчёт P.530: карточка, прогноз недоступности, цели доступности', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Рассчитать', exact: true }).click()
-  await expect(page.getByText('173.0 дБ').first()).toBeVisible({ timeout: 20000 })
+  await expect(page.getByText(MEDIAN_DB).first()).toBeVisible({ timeout: 20000 })
 
   // Карточка availability-отчёта
   await expect(page.getByText('Доступность связи (ITU-R P.530)').first()).toBeVisible({ timeout: 10000 })
@@ -43,7 +49,7 @@ test('availability-отчёт P.530: карточка, прогноз недос
 test('clearance-аудит: блок просвета 0.6·F1 и класс трассы', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Рассчитать', exact: true }).click()
-  await expect(page.getByText('173.0 дБ').first()).toBeVisible({ timeout: 20000 })
+  await expect(page.getByText(MEDIAN_DB).first()).toBeVisible({ timeout: 20000 })
 
   // Блок аудита в карточке профиля: вердикты по K = 4/3, 2/3, ∞
   await expect(page.getByText('Аудит просвета (0.6·F1):').first()).toBeVisible({ timeout: 10000 })
@@ -69,7 +75,7 @@ test('шумовое окружение P.372: селектор в приёмн�
 test('сравнение методов дифракции: раскрывающаяся таблица при затенении', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Рассчитать', exact: true }).click()
-  await expect(page.getByText('173.0 дБ').first()).toBeVisible({ timeout: 20000 })
+  await expect(page.getByText(MEDIAN_DB).first()).toBeVisible({ timeout: 20000 })
 
   // На синтетическом DEM трасса затенена — сводка методов видна в свёрнутом виде
   const summary = page.getByText(/Сравнение методов дифракции/).first()

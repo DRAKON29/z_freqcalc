@@ -1,7 +1,9 @@
 /**
  * HttpPropagationModel — расчёт через Python (FastAPI) сервис.
- * приоритетная модель ITU-R P.2001 (py2001 или P.2001-lite на сервере).
- * При недоступности сервиса — fallback на локальную модель с предупреждением.
+ * приоритетная модель ITU-R P.2001-6: полная реализация Py2001 (вендоренный
+ * порт ITU-R WP 3M, p2001_port + P2001.npz из карт ITU); при отсутствии карт
+ * на сервере — P.2001-lite. При недоступности сервиса — fallback на локальную
+ * модель с предупреждением.
  */
 import type { CalculationInput, ModelId, PropagationModel, PropagationResult, ModelCapabilities } from '../types'
 import { computeFsplP526, computeP2001Lite } from '../p2001lite'
@@ -54,7 +56,7 @@ export class HttpPropagationModel implements PropagationModel {
       requiresBackend: true,
       description:
         this.modelId === 'p2001'
-          ? 'ITU-R P.2001 через FastAPI-сервис (py2001 или P.2001-lite), поддержка карт ITU'
+          ? 'ITU-R P.2001-6 через FastAPI-сервис: полная реализация Py2001 + карты ITU (P2001.npz), при их отсутствии — P.2001-lite'
           : this.modelId === 'itm'
             ? 'Longley-Rice ITM v1.2.2 через FastAPI-сервис (порт NTIA/ITS); локальной реализации нет — при недоступности сервиса fallback на P.2001-lite'
             : 'FSPL + P.526 через FastAPI-сервис',

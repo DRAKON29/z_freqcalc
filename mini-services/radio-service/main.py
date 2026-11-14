@@ -51,12 +51,16 @@ HISTORY_DB = DATA_DIR / "history" / "history.db"
 SRTM_DIR = DATA_DIR / "srtm"
 P452_MAPS_DIR = DATA_DIR / "p452_maps"
 P452_NPZ = DATA_DIR / "p452" / "P452.npz"
+P2001_MAPS_DIR = DATA_DIR / "p2001_maps"
+P2001_NPZ = DATA_DIR / "p2001" / "P2001.npz"
 
-for d in [ITU_MAPS_DIR, CLUTTER_FILE.parent, HISTORY_DB.parent, SRTM_DIR, P452_MAPS_DIR, P452_NPZ.parent]:
+for d in [ITU_MAPS_DIR, CLUTTER_FILE.parent, HISTORY_DB.parent, SRTM_DIR, P452_MAPS_DIR, P452_NPZ.parent, P2001_MAPS_DIR, P2001_NPZ.parent]:
     d.mkdir(parents=True, exist_ok=True)
 
 # Вендоренный P.452 (p452_port) читает P452.npz по этому пути при импорте
 os.environ.setdefault("RADIO_P452_NPZ", str(P452_NPZ))
+# Вендоренный Py2001 (p2001_port, полная P.2001-6) читает P2001.npz по этому пути при импорте
+os.environ.setdefault("RADIO_P2001_NPZ", str(P2001_NPZ))
 
 MAX_FILE_BYTES = 700 * 1024 * 1024   # 700 МБ на файл
 MAX_ZIP_BYTES = 1024 * 1024 * 1024   # 1 ГБ на zip
@@ -188,10 +192,13 @@ def health():
 
 
 def _py2001_available() -> bool:
+    """Полная P.2001-6 (вендоренный порт Py2001): импорт падает без P2001.npz
+    (цифровые карты ITU не распространяются с репозиторием) — это ожидаемое
+    состояние «недоступна», расчёт уходит в P.2001-lite."""
     try:
-        import py2001  # noqa: F401
+        import p2001_port  # noqa: F401
         return True
-    except ImportError:
+    except Exception:
         return False
 
 
@@ -226,7 +233,9 @@ def capabilities():
         "p2001": {
             "available": True,
             "referenceImplementation": p2001,
-            "engine": "py2001 (ITU) + карты" if p2001 else "P.2001-lite (аппроксимация, без карт)",
+            "engine": "P.2001-6 (Py2001, вендоренный порт ITU-R WP 3M; карты ITU)"
+            if p2001
+            else "P.2001-lite (аппроксимация, без карт)",
             "supportsMaps": p2001,
         },
         "fspl-p526": {"available": True, "engine": "py: FSPL + P.526 + P.838/P.676/P.833"},
@@ -253,17 +262,16 @@ async def api_calculate(request: Request):
     _validate_input(inp)
 
     if model == "p2001" and _py2001_available():
-        # Приоритетная реализация: py2001 + карты ITU
+        # Полная P.2001-6 (роадмап 2.6): вендоренный порт Py2001 + P2001.npz
+        # (карты ITU). Без координат концов трассы или при ошибке — lite.
         try:
-            import py2001 as _py2001  # type: ignore
-            # Полная интеграция py2001 требует карт ITU; при их отсутствии — lite
-            if _maps_count() == 0:
-                raise RuntimeError("Карты ITU не загружены")
-            # py2001 API различается между версиями — здесь точка расширения
-            raise RuntimeError("py2001: требуется адаптер карт")
+            from p2001_model import calculate_full
+            result = calculate_full(
+                inp, engine_note="py: P.2001-6 (Py2001, вендоренный порт ITU-R WP 3M)"
+            )
         except Exception as e:
-            result = p2001_calculate(inp, engine_note="py: P.2001-lite (fallback от py2001)")
-            result["warnings"].insert(0, f"py2001 недоступен: {e} — выполнен расчёт P.2001-lite")
+            result = p2001_calculate(inp, engine_note="py: P.2001-lite (fallback от Py2001)")
+            result["warnings"].insert(0, f"P.2001-6 недоступна: {e} — выполнен расчёт P.2001-lite")
     elif model == "p2001":
         result = p2001_calculate(inp, engine_note="py: P.2001-lite (статистическая аппроксимация)")
     elif model == "itm":

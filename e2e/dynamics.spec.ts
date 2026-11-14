@@ -1,11 +1,16 @@
 /** E2E: динамика (ручной режим) — расчёт по умолчанию после линии. */
 import { expect, test } from '@playwright/test'
+// Медиана дефолтной трассы зависит от движка http-модели (роадмап 2.6):
+// 183.4 — полная P.2001-6 (Py2001 + карты ITU, локально и на проде),
+// 173.0 — P.2001-lite (CI без карт)
+const MEDIAN_DB = /173\.0|183\.4 дБ/
+
 
 test('расчёт динамики в ручном режиме', async ({ page }) => {
   await page.goto('/')
   // Динамика требует выполненного расчёта линии
   await page.getByRole('button', { name: 'Рассчитать', exact: true }).click()
-  await expect(page.getByText('173.0 дБ').first()).toBeVisible({ timeout: 20000 })
+  await expect(page.getByText(MEDIAN_DB).first()).toBeVisible({ timeout: 20000 })
 
   await page.getByRole('tab', { name: 'Динамика' }).click()
   await expect(page.getByText('Параметры борта')).toBeVisible()
@@ -35,7 +40,7 @@ test('переключатель нескольких высот добавля�
 test('динамика 2.2: рельеф per-sample, скорости 0–300, прогресс расчёта', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Рассчитать', exact: true }).click()
-  await expect(page.getByText('173.0 дБ').first()).toBeVisible({ timeout: 20000 })
+  await expect(page.getByText(MEDIAN_DB).first()).toBeVisible({ timeout: 20000 })
 
   await page.getByRole('tab', { name: 'Динамика' }).click()
   // Подпись скорости из LIMITS (0–300), поле номинального угла места присутствует

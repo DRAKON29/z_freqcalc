@@ -4,6 +4,11 @@
  * кругового покрытия, полноэкранный режим карты.
  */
 import { expect, test } from '@playwright/test'
+// Медиана дефолтной трассы зависит от движка http-модели (роадмап 2.6):
+// 183.4 — полная P.2001-6 (Py2001 + карты ITU, локально и на проде),
+// 173.0 — P.2001-lite (CI без карт)
+const MEDIAN_DB = /173\.0|183\.4 дБ/
+
 
 test('share-ссылка: кнопка копирует URL и показывает toast', async ({ page }) => {
   await page.context().grantPermissions(['clipboard-write', 'clipboard-read'])
@@ -72,7 +77,7 @@ test('пресеты: вкладка «Карты и настройки» — и
 test('режимы преград: селектор переключается, легенда адаптируется', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Рассчитать', exact: true }).click()
-  await expect(page.getByText('173.0 дБ').first()).toBeVisible({ timeout: 20000 })
+  await expect(page.getByText(MEDIAN_DB).first()).toBeVisible({ timeout: 20000 })
 
   const modeTrigger = page.getByLabel('Преграды на покрытии')
   await expect(modeTrigger).toBeVisible({ timeout: 15000 })
@@ -113,7 +118,7 @@ test('fullscreen карты: разворот, клик по кнопке вну
 test('покрытие на карте: автопоказ оверлея, тумблер, бейдж статистики (этап 2.5)', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Рассчитать', exact: true }).click()
-  await expect(page.getByText('173.0 дБ').first()).toBeVisible({ timeout: 20000 })
+  await expect(page.getByText(MEDIAN_DB).first()).toBeVisible({ timeout: 20000 })
   // автопоказ: геопривязанный канва-оверлей появился на карте
   const overlay = page.locator('img.leaflet-image-layer.coverage-overlay-layer')
   await expect(overlay).toBeVisible({ timeout: 15000 })

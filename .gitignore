@@ -74,3 +74,7 @@ mini-services/radio-service/data/srtm/
 # P.452 (роадмап 2.3): карты ITU и собранный npz — не распространяются
 mini-services/radio-service/data/p452_maps/
 mini-services/radio-service/data/p452/
+
+# P.2001-6 (роадмап 2.6): карты ITU (14 таблиц) и собранный npz — не распространяются
+mini-services/radio-service/data/p2001_maps/
+mini-services/radio-service/data/p2001/
