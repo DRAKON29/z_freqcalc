@@ -206,6 +206,14 @@ def _p452_available() -> bool:
         return False
 
 
+def _itm_available() -> bool:
+    try:
+        import itm_model  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
 def _maps_count() -> int:
     return len(list(ITU_MAPS_DIR.glob("*")))
 
@@ -222,7 +230,7 @@ def capabilities():
             "supportsMaps": p2001,
         },
         "fspl-p526": {"available": True, "engine": "py: FSPL + P.526 + P.838/P.676/P.833"},
-        "itm": {"available": True, "engine": "py: Longley-Rice ITM v1.2.2 (порт NTIA/ITS, роадмап 2.1)"},
+        "itm": {"available": _itm_available(), "engine": "py: Longley-Rice ITM v1.2.2 (порт NTIA/ITS, роадмап 2.1)"},
         "p452": {
             "available": p452,
             "engine": "P.452-18 (Py452, вендоренный порт; карты N050/DN50)" if p452 else "недоступен: соберите P452.npz (scripts/build_p452_npz.py)",
