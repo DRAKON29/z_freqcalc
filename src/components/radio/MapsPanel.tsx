@@ -572,7 +572,7 @@ export function MapsPanel() {
             <div className="text-sm">
               Загружено тайлов: <span className="font-semibold">{hgtTiles.length}</span>
               {trackInside === false && (
-                <Badge variant="destructive" className="ml-2">
+                <Badge variant="destructive" className="ml-2 max-w-full whitespace-normal">
                   Трасса выходит за пределы тайлов — загрузите соседние тайлы
                 </Badge>
               )}

@@ -130,9 +130,9 @@ function StationCard({
   }
 
   return (
-    <div className="space-y-3 rounded-lg border p-3">
-      <div>
-        <p className={`flex items-center gap-1.5 text-sm font-semibold ${isGround ? 'text-emerald-700' : 'text-amber-700'}`}>
+    <div className="min-w-0 space-y-3 rounded-lg border p-3">
+      <div className="min-w-0">
+        <p className={`flex flex-wrap items-center gap-1.5 text-sm font-semibold ${isGround ? 'text-emerald-700' : 'text-amber-700'}`}>
           {isGround ? <RadioTower className="h-4 w-4" /> : <Plane className="h-4 w-4" />}
           {isGround ? 'Наземный приёмо-передатчик (Tx)' : 'Подвижный приёмо-передатчик (Rx)'}
         </p>
@@ -149,9 +149,9 @@ function StationCard({
         max={5000}
       />
 
-      <div className="space-y-2 rounded-md border p-2.5">
+      <div className="min-w-0 space-y-2 rounded-md border p-2.5">
         <p className="text-xs font-medium text-muted-foreground">Антенна {isGround ? 'Tx' : 'Rx'}</p>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid min-w-0 grid-cols-2 gap-2">
           <NumField label="Усиление, дБи" value={ant.gainDbi} onChange={(v) => setAnt({ gainDbi: v })} />
           <div>
             <Label className="text-xs">Поляризация</Label>
@@ -182,11 +182,13 @@ function StationCard({
         </div>
       </div>
 
-      <div className="space-y-2 rounded-md border p-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+      <div className="min-w-0 space-y-2 rounded-md border p-2.5">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <p className="min-w-0 text-xs font-medium text-muted-foreground flex flex-wrap items-center gap-1.5">
             Передатчик
-            <Badge variant="outline" className="text-[10px] font-normal">
+            {/* Направление линии: подробность для md+ (на мобильных строка
+                с бейджем не сжимается и распирает карточку) */}
+            <Badge variant="outline" className="hidden whitespace-normal text-[10px] font-normal md:inline-flex">
               {isGround ? 'передаёт: прямая линия (наземный Tx → подвижный Rx)' : 'передаёт: обратная линия (подвижный Tx → наземный Rx)'}
             </Badge>
           </p>
@@ -201,7 +203,7 @@ function StationCard({
             <span className={powerUnit === 'mw' ? 'font-medium' : 'text-muted-foreground'}>мВт (mW)</span>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid min-w-0 grid-cols-2 gap-2">
           {powerUnit === 'dbm' ? (
             <NumField
               label="Мощность, дБм (dBm)"
@@ -226,14 +228,14 @@ function StationCard({
         </p>
       </div>
 
-      <div className="space-y-2 rounded-md border p-2.5">
-        <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+      <div className="min-w-0 space-y-2 rounded-md border p-2.5">
+        <p className="min-w-0 text-xs font-medium text-muted-foreground flex flex-wrap items-center gap-1.5">
           Приёмник
-          <Badge variant="outline" className="text-[10px] font-normal">
+          <Badge variant="outline" className="hidden whitespace-normal text-[10px] font-normal md:inline-flex">
             {isGround ? 'принимает: обратная линия (подвижный Tx → наземный Rx)' : 'принимает: прямая линия (наземный Tx → подвижный Rx)'}
           </Badge>
         </p>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid min-w-0 grid-cols-2 gap-2">
           <NumField label="Чувствительность, дБм (dBm)" value={rxSensDbm} onChange={setRxSensDbm} step={1} />
           {detailed && (
             <>
@@ -311,7 +313,7 @@ function StationCard({
       </div>
 
       {/* Пользовательские пресеты (этап UX.2): сохранение снимка станции и применение */}
-      <div className="space-y-2 rounded-md border p-2.5">
+      <div className="min-w-0 space-y-2 rounded-md border p-2.5">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <p className="text-xs font-medium text-muted-foreground">Пресет оборудования</p>
           <Button

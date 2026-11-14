@@ -329,13 +329,13 @@ export function ResultsPanel() {
       {/* Бюджет линии: приход/расход */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center justify-between">
+          <CardTitle className="text-base flex flex-wrap items-center justify-between gap-2">
             Бюджет линии (Link Budget)
-            <Badge variant="outline" className="font-mono">{result.engineUsed}</Badge>
+            <Badge variant="outline" className="max-w-full whitespace-normal font-mono">{result.engineUsed}</Badge>
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
-          <div>
+          <div className="min-w-0">
             <p className="text-sm font-medium mb-2">Приход</p>
             <Table>
               <TableHeader>
@@ -356,7 +356,7 @@ export function ResultsPanel() {
               </TableBody>
             </Table>
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-sm font-medium mb-2">Расход</p>
             <Table>
               <TableHeader>
@@ -460,7 +460,7 @@ export function ResultsPanel() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex flex-wrap items-center justify-between gap-2">
               Помехи (C/I, ITU-R P.452)
-              <Badge variant="outline" className="font-mono">{interferenceReport.engineUsed}</Badge>
+              <Badge variant="outline" className="max-w-full whitespace-normal font-mono">{interferenceReport.engineUsed}</Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -682,7 +682,7 @@ export function ResultsPanel() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex flex-wrap items-center justify-between gap-2">
               Сравнение моделей: ITM vs P.2001
-              <Badge variant="outline" className="font-mono text-[10px]">{comparison.engineUsed}</Badge>
+              <Badge variant="outline" className="max-w-full whitespace-normal font-mono text-[10px]">{comparison.engineUsed}</Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -727,7 +727,7 @@ export function ResultsPanel() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex flex-wrap items-center justify-between gap-2">
               Обратная линия: подвижный Tx → наземный Rx
-              <Badge variant="outline" className="font-mono">
+              <Badge variant="outline" className="max-w-full whitespace-normal font-mono">
                 {reverseInput.frequencyMhz.toFixed(0)} МГц · {reverseResult.engineUsed}
               </Badge>
             </CardTitle>
@@ -778,7 +778,7 @@ export function ResultsPanel() {
               </p>
             )}
             <CardContent className="grid gap-4 md:grid-cols-2 p-0">
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm font-medium mb-2">Приход</p>
                 <Table>
                   <TableHeader>
@@ -799,7 +799,7 @@ export function ResultsPanel() {
                   </TableBody>
                 </Table>
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm font-medium mb-2">Расход</p>
                 <Table>
                   <TableHeader>
