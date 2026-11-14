@@ -30,16 +30,22 @@ export class HttpPropagationModel implements PropagationModel {
     } catch (e) {
    // Fallback
       const reason = e instanceof Error ? e.message : String(e)
-      // ITM реализован только в python-сервисе (роадмап 2.1, TS-порт отсутствует —
-      // задокументированный разрыв): при недоступности сервиса — P.2001-lite
+      // ITM и P.528 реализованы только в python-сервисе (роадмап 2.1/3.5,
+      // TS-порты отсутствуют — задокументированный разрыв): при недоступности
+      // сервиса — P.2001-lite
       const local = this.modelId === 'fspl-p526' ? computeFsplP526(input) : computeP2001Lite(input)
       const localName = this.modelId === 'fspl-p526' ? 'FSPL + P.526' : 'P.2001-lite'
-      const itmNote = this.modelId === 'itm' ? 'ITM доступен только через Python-сервис — ' : ''
+      const backendOnlyNote =
+        this.modelId === 'itm'
+          ? 'ITM доступен только через Python-сервис — '
+          : this.modelId === 'p528'
+            ? 'P.528 доступен только через Python-сервис — '
+            : ''
       return {
         ...local,
         model: this.modelId,
         warnings: [
-          `${itmNote}Python-сервис недоступен (${reason}) — выполнен локальный расчёт ${localName}.`,
+          `${backendOnlyNote}Python-сервис недоступен (${reason}) — выполнен локальный расчёт ${localName}.`,
           ...local.warnings,
         ],
       }
@@ -49,7 +55,7 @@ export class HttpPropagationModel implements PropagationModel {
   getCapabilities(): ModelCapabilities {
     return {
       model: this.modelId,
-      supportsTimePercent: this.modelId === 'p2001' || this.modelId === 'itm',
+      supportsTimePercent: this.modelId === 'p2001' || this.modelId === 'itm' || this.modelId === 'p528',
       supportsMaps: this.modelId === 'p2001',
       minFrequencyMhz: 30,
       maxFrequencyMhz: 50000,
@@ -59,7 +65,9 @@ export class HttpPropagationModel implements PropagationModel {
           ? 'ITU-R P.2001-6 через FastAPI-сервис: полная реализация Py2001 + карты ITU (P2001.npz), при их отсутствии — P.2001-lite'
           : this.modelId === 'itm'
             ? 'Longley-Rice ITM v1.2.2 через FastAPI-сервис (порт NTIA/ITS); локальной реализации нет — при недоступности сервиса fallback на P.2001-lite'
-            : 'FSPL + P.526 через FastAPI-сервис',
+            : this.modelId === 'p528'
+              ? 'ITU-R P.528-5 через FastAPI-сервис (порт эталонной реализации NTIA); авиационная модель по гладкой сфере — при недоступности сервиса fallback на P.2001-lite'
+              : 'FSPL + P.526 через FastAPI-сервис',
     }
   }
 }

@@ -198,6 +198,7 @@ export function decodeShareHash(hash: string): ShareState | null {
     }
   }
   const md = p.get('md')
+  // P.528 в share-ссылки не выдаётся (ТЗ 9.3: выигрыш <5 % — в селектор не выводится)
   if (md === 'p2001' || md === 'fspl-p526' || md === 'itm') out.model = md
 
   out.run = p.get('run') === '1'

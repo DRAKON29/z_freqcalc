@@ -736,10 +736,10 @@ export const useRadioStore = create<RadioState>((set, get) => ({
         budget = { ...budget, expense: [...budget.expense, availabilityExpenseRow(fwdReport)] }
       }
 
-      // Сравнение моделей (роадмап 2.1): при выбранном ITM — перекрёстный расчёт
-      // прямой линии через P.2001 (http) для «второго мнения»
+      // Сравнение моделей (роадмап 2.1/3.5): при выбранном ITM или P.528 —
+      // перекрёстный расчёт прямой линии через P.2001 (http) для «второго мнения»
       let comparison: ModelComparison | null = null
-      if (s.model === 'itm') {
+      if (s.model === 'itm' || s.model === 'p528') {
         try {
           const p2001Model = createModel('http', 'p2001')
           const p2001Prop = await p2001Model.calculate(lastInput)

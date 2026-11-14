@@ -199,7 +199,7 @@ export function HistoryPanel() {
                   <TableRow key={`${e.id}-${e.createdAt}`}>
                     <TableCell className="text-xs">{new Date(e.createdAt).toLocaleString('ru-RU')}</TableCell>
                     <TableCell className="text-xs">{e.name}</TableCell>
-                    <TableCell className="text-xs">{e.model === 'p2001' ? 'P.2001' : e.model === 'itm' ? 'ITM' : 'FSPL+P.526'}</TableCell>
+                    <TableCell className="text-xs">{e.model === 'p2001' ? 'P.2001' : e.model === 'itm' ? 'ITM' : e.model === 'p528' ? 'P.528' : 'FSPL+P.526'}</TableCell>
                     <TableCell className="text-right text-xs font-mono">{e.frequencyMhz} МГц</TableCell>
                     <TableCell className="text-right text-xs font-mono">{e.distanceKm.toFixed(1)} км</TableCell>
                     <TableCell className="text-right text-xs font-mono">{e.medianLossDb.toFixed(1)} дБ</TableCell>

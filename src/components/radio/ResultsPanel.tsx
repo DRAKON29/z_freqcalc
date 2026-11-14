@@ -668,12 +668,12 @@ export function ResultsPanel() {
         </details>
       )}
 
-      {/* Сравнение с P.2001 (роадмап 2.1): показывается при выбранной модели ITM */}
-      {result.model === 'itm' && comparison && (
+      {/* Сравнение с P.2001 (роадмап 2.1/3.5): при выбранной модели ITM или P.528 */}
+      {(result.model === 'itm' || result.model === 'p528') && comparison && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex flex-wrap items-center justify-between gap-2">
-              Сравнение моделей: ITM vs P.2001
+              Сравнение моделей: {result.model === 'itm' ? 'ITM' : 'P.528'} vs P.2001
               <Badge variant="outline" className="max-w-full whitespace-normal font-mono text-[10px]">{comparison.engineUsed}</Badge>
             </CardTitle>
           </CardHeader>
@@ -688,12 +688,12 @@ export function ResultsPanel() {
               </TableHeader>
               <TableBody>
                 <TableRow>
-                  <TableCell>Longley-Rice ITM (выбрана)</TableCell>
+                  <TableCell>{result.model === 'itm' ? 'Longley-Rice ITM (выбрана)' : 'ITU-R P.528 (выбрана)'}</TableCell>
                   <TableCell className="text-right font-mono">{result.medianLossDb.toFixed(1)}</TableCell>
                   <TableCell className={`text-right font-mono ${marginCls(budget.linkMarginDb)}`}>{budget.linkMarginDb.toFixed(1)}</TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell>ITU-R P.2001 (перекрёстный расчёт)</TableCell>
+                  <TableCell>ITU-R P.2001-6 (перекрёстный расчёт)</TableCell>
                   <TableCell className="text-right font-mono">{comparison.medianLossDb.toFixed(1)}</TableCell>
                   <TableCell className={`text-right font-mono ${marginCls(comparison.linkMarginDb)}`}>{comparison.linkMarginDb.toFixed(1)}</TableCell>
                 </TableRow>

@@ -51,9 +51,9 @@ export class WasmPropagationModel implements PropagationModel {
   constructor(private modelId: ModelId) {}
 
   async calculate(input: CalculationInput): Promise<PropagationResult> {
-    if (this.modelId === 'itm') {
-      // ITM реализован только в python-сервисе (роадмап 2.1): в wasm-режиме —
-      // локальный P.2001-lite с явным предупреждением
+    if (this.modelId === 'itm' || this.modelId === 'p528') {
+      // ITM и P.528 реализованы только в python-сервисе (роадмап 2.1/3.5):
+      // в wasm-режиме — локальный P.2001-lite с явным предупреждением
       const local = computeP2001Lite(input)
       return {
         ...local,
@@ -94,7 +94,7 @@ export class WasmPropagationModel implements PropagationModel {
   getCapabilities(): ModelCapabilities {
     return {
       model: this.modelId,
-      supportsTimePercent: this.modelId === 'p2001' || this.modelId === 'itm',
+      supportsTimePercent: this.modelId === 'p2001' || this.modelId === 'itm' || this.modelId === 'p528',
       supportsMaps: false,
       minFrequencyMhz: 30,
       maxFrequencyMhz: 50000,
@@ -104,7 +104,9 @@ export class WasmPropagationModel implements PropagationModel {
           ? 'P.2001-lite в браузере (Pyodide/WASM); офлайн-режим; без карт ITU'
           : this.modelId === 'itm'
             ? 'ITM недоступен в браузере — локальный расчёт P.2001-lite с предупреждением'
-            : 'FSPL + P.526 локально в браузере',
+            : this.modelId === 'p528'
+              ? 'P.528 недоступен в браузере — локальный расчёт P.2001-lite с предупреждением'
+              : 'FSPL + P.526 локально в браузере',
     }
   }
 }
