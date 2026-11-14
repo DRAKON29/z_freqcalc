@@ -46,9 +46,9 @@ NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000/api bun run dev
 ## Верификация (регресс)
 
 ```bash
-bun test tests/          # 171 тест TS-ядра — должны быть зелёными
+bun test tests/          # 189 тестов TS-ядра (вкл. 18 golden кросс-движковых) — должны быть зелёными
 bun run lint             # eslint — чисто
-cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q   # 82 теста + 1 skip (эталон P.452 прогоняется при собранном P452.npz; в CI оба эталонных слоя skip — карт ITU нет)
+cd mini-services/radio-service && ./.venv/Scripts/python.exe -m pytest tests/ -q   # 101 тест: SG3-эталоны P.2001/P.452 + golden-трассы 3.4 прогоняются при собранных npz (CI качает карты из itu.int best-effort)
 ```
 
 E2E (стек уже запущен: сервис :8000 + фронт :3000):
@@ -77,6 +77,19 @@ data/p452 на сервере; p2001:true = полная P.2001-6, P2001.npz в 
 (локально + на сервере), в git не входят и не должны.
 
 Реализовано (сверху вниз):
+- (этот коммит) **роадмап 3.4 — эталонная валидация** + UI-правки: сводный раздел
+  README «Эталонная валидация»; кросс-движковые golden-трассы ±1 дБ (подход
+  Meshtastic Site Planner) — tests/fixtures/golden-traces.json (9 трасс: плоская
+  LOS, контрольная московская, два холма NLOS, перегоризонт 150 км, 500 м,
+  дождь 5.8 ГГц, H-поляризация, k=2/3, FSPL+P.526), снапшоты TS (bun
+  scripts/gen_golden_traces.ts) и python (scripts/gen_golden_traces_py.py),
+  тесты tests/golden-traces.test.ts + tests/test_golden_traces.py — самопроверка
+  ±0.01 дБ + кросс ±1 дБ (факт. Δ 0.00 дБ на всех трассах); CI: job test качает
+  P.2001-6/P.452-18 ZIP-E из itu.int best-effort и собирает npz → SG3-слои
+  pytest гоняются в CI (ITU недоступен → skip). UI: флаг Leaflet в атрибуции
+  скрыт (.leaflet-attribution-flag, globals.css), карточка «Данные из P.2001-6»
+  (без счётчика продуктов и перечня файлов), движок-бейдж «P.2001-6(ITU-R WP 3M)»
+  (engine_note в main.py/p2001_model.py).
 - (этот коммит) **роадмап 2.6 — полная P.2001-6 в python-сервисе**: вендоренный
   порт Py2001 (`p2001_port/`, перевод эталонной MATLAB/Octave реализации ITU-R
   WP 3M, MIT; единственная правка — npz из env RADIO_P2001_NPZ =

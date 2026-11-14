@@ -284,6 +284,28 @@ Ivica Stevanovic, OFCOM; MIT-лицензия, `mini-services/radio-service/p200
 P.2001-lite (без карт) — 173.0 / −132.7 / −31.3. Отличие lite от полной модели
 на этой синтетической трассе ≈ 10 дБ (lite не видит зон/климата по координатам).
 
+## Эталонная валидация (роадмап 3.4)
+
+Сводка эталонных слоёв — «аргумент достоверности» цифр приложения:
+
+| Слой | Эталон | Допуск | Где | CI |
+|---|---|---|---|---|
+| Полная P.2001-6 (Py2001) | официальные validation examples ITU-R SG3: b2iseac + prof4, 2215 строк Lb на каждый | 10⁻⁶ дБ (макс. факт. 4.6·10⁻¹³) | `tests/test_p2001.py::TestP2001ValidationExamples` | ✅ (карты скачиваются из itu.int) |
+| P.452-18 (Py452) | официальные validation examples ITU-R SG3: 17 пар профиль/результат | ±0.1 дБ | `tests/test_p452.py::TestP452ValidationExamples` | ✅ (карты скачиваются из itu.int) |
+| Кросс-движковая: TS ↔ python lite | 9 фиксированных трасс в `tests/fixtures/golden-traces.json` (плоская LOS, контрольная московская, NLOS, перегоризонтная, дождь 5.8 ГГц, подрефракция…), golden ±1 дБ — подход Meshtastic Site Planner | ±1 дБ (факт. 0.00) | `tests/golden-traces.test.ts` + `tests/test_golden_traces.py` | ✅ |
+| ITM (Longley-Rice) | справочные числа синтетических профилей (LOS/холм/перегоризонт), hand-derived | точные | `tests/test_itm.py` | ✅ |
+| Зеркала формул TS↔python | availability/clearance по P.530/P.526 | точные | `tests/test_reports.py` | ✅ |
+| Формулы P.525/526/838/676/833/бюджет | hand-derived значения | точные | `tests/*.test.ts` + `test_formulas.py` | ✅ |
+
+- SG3-слои требуют **цифровых карт ITU** (не распространяются с репозиторием):
+  локально — `scripts/download_p2001_maps.ps1` / `download_p452_maps.ps1` +
+  `build_p2001_npz.py` / `build_p452_npz.py`; в CI карты скачиваются из itu.int
+  best-effort шагом перед pytest (ITU недоступен → слой честно skip'ается).
+- Снапшоты кросс-движковых трасс регенерируются осознанно:
+  `bun scripts/gen_golden_traces.ts` && `python scripts/gen_golden_traces_py.py`
+  — только при намеренном изменении модели (расхождение движков в момент
+  генерации 0.00 дБ на всех 9 трассах).
+
 ## Решения (ТЗ 9.3 — фиксируются в README)
 
 1. **Анимация ≥ 24 FPS** — реализована упрощённая анимация траектории на карте с измерением

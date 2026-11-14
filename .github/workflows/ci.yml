@@ -40,7 +40,20 @@ jobs:
           python -m pip install --upgrade pip
           # httpx2 — для fastapi TestClient (starlette 0.4x+, см. предупреждение testclient)
           pip install -r requirements.txt pytest httpx2
-      - name: Тесты Python (формулы + API)
+      - name: Карты ITU для SG3-валидации (best-effort: itu.int может быть недоступен)
+        run: |
+          mkdir -p itu_dl/p2001 itu_dl/p452
+          # P.2001-6 (14 таблиц) и P.452-18 (N050/DN50) — официальные ZIP-E с itu.int;
+          # карты не распространяются с репозиторием, SG3-слой pytest без них skip'ается
+          curl -fLsS --max-time 180 -o itu_dl/p2001.zip "https://www.itu.int/dms_pubrec/itu-r/rec/p/R-REC-P.2001-6-202509-I!!ZIP-E.zip" || echo "WARN: P.2001-6 ZIP недоступен"
+          curl -fLsS --max-time 180 -o itu_dl/p452.zip "https://www.itu.int/dms_pubrec/itu-r/rec/p/R-REC-P.452-18-202310-I!!ZIP-E.zip" || echo "WARN: P.452 ZIP недоступен"
+          [ -f itu_dl/p2001.zip ] && unzip -q -o itu_dl/p2001.zip -d itu_dl/p2001 || true
+          [ -f itu_dl/p452.zip ] && unzip -q -o itu_dl/p452.zip -d itu_dl/p452 || true
+          P2001_FILE=$(find itu_dl/p2001 -name DN_Median.txt -print -quit || true)
+          P452_FILE=$(find itu_dl/p452 -name N050.TXT -print -quit || true)
+          if [ -n "$P2001_FILE" ]; then python scripts/build_p2001_npz.py --maps-dir "$(dirname "$P2001_FILE")"; else echo "WARN: SG3-слой P.2001 будет пропущен (нет карт)"; fi
+          if [ -n "$P452_FILE" ]; then python scripts/build_p452_npz.py --maps-dir "$(dirname "$P452_FILE")"; else echo "WARN: SG3-слой P.452 будет пропущен (нет карт)"; fi
+      - name: Тесты Python (формулы + API + SG3-эталоны при картах)
         working-directory: mini-services/radio-service
         run: python -m pytest tests/ -q
 
