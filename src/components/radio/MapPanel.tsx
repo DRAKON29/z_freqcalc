@@ -143,6 +143,14 @@ export function MapPanel() {
     if (!fullscreen) {
       return () => clearTimeout(t)
     }
+    // Скролл страницы под оверлеем блокируем (overflow на html — каноничный
+    // лок вьюпорта) и запоминаем позицию: без этого страница прокручивается
+    // за полноэкранной картой, и после сворачивания пользователь остаётся
+    // «проехавшим» вниз — шапка и вкладки уезжают за край
+    const savedScrollY = window.scrollY
+    const scrollbarW = window.innerWidth - document.documentElement.clientWidth
+    document.documentElement.style.overflow = 'hidden'
+    if (scrollbarW > 0) document.body.style.paddingRight = `${scrollbarW}px`
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') toggleFullscreen()
     }
@@ -150,6 +158,10 @@ export function MapPanel() {
     return () => {
       clearTimeout(t)
       window.removeEventListener('keydown', onKey)
+      document.documentElement.style.overflow = ''
+      document.body.style.paddingRight = ''
+      // Точная позиция страницы на момент разворота — вид целиком предсказуем
+      window.scrollTo(0, savedScrollY)
     }
   }, [fullscreen])
 
@@ -484,12 +496,12 @@ export function MapPanel() {
         className="h-[380px] w-full rounded-lg border z-0"
         data-fullscreen={fullscreen ? 'true' : undefined}
         style={
+          // Геометрия контейнера — инлайн-стилями, БЕЗ опоры на leaflet.css:
+          // в собранном чанке у .leaflet-container нет position (панели
+          // position:absolute якорятся к вьюпорту → тайлы «улетают» за 380px
+          // контейнер и перекрывают страницу). Инлайн сильнее любых классов.
           fullscreen
             ? {
-                // Инлайн-стили вместо className: React-перезапись className
-                // удаляла Leaflet-класс .leaflet-container, а .leaflet-container
-                // { position: relative } из leaflet.css (без @layer) перекрывал
-                // Tailwind-класс fixed — карта «падала» (высота 0, тайлы нет)
                 position: 'fixed',
                 top: 0,
                 right: 0,
@@ -498,10 +510,11 @@ export function MapPanel() {
                 zIndex: 1000,
                 width: '100vw',
                 height: '100vh',
+                overflow: 'hidden',
                 borderRadius: 0,
                 borderWidth: 0,
               }
-            : undefined
+            : { position: 'relative', overflow: 'hidden', borderRadius: '8px' }
         }
       >
         {/* Кнопка полноэкранного режима — внутри карты: во весь экран карту

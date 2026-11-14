@@ -96,7 +96,16 @@ test('fullscreen карты: разворот, клик по кнопке вну
   expect(box?.height ?? 0).toBeGreaterThan(600) // полноэкранный, а не 380px
   // Кнопка «Свернуть» внутри полноэкранной карты кликабельна (регресс:
   // раньше внешняя кнопка уходила под слой карты)
+  // Скролл страницы под оверлеем заблокирован для пользователя (колесо мыши
+  // при html overflow:hidden не скроллит), после выхода — позиция восстановлена
+  await page.mouse.wheel(0, 600)
+  await page.waitForTimeout(300)
+  const yLocked = await page.evaluate(() => Math.round(window.scrollY))
+  expect(yLocked).toBe(0)
   await page.getByRole('button', { name: /Свернуть/ }).click()
   await expect(fsContainer).toHaveCount(0)
   await expect(page.getByRole('button', { name: /Во весь экран/ })).toBeVisible()
+  // Шапка приложения видна после сворачивания (регресс: «пропадает вся шапка»)
+  await page.evaluate(() => window.scrollTo(0, 0))
+  await expect(page.locator('header')).toBeVisible()
 })
